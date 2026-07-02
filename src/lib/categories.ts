@@ -33,11 +33,13 @@ const RULES: Array<[RegExp, string]> = [
   [/\bmezel|salam|carnati|sunca|crenvur|parizer|kaizer|bacon\b/, 'carne-mezeluri'],
   [/\bcarne|pui|porc|vita|curcan|miel|grill\b/, 'carne-mezeluri'],
   [/\bpeste|somon|ton|hering|fructe de mare|creveti\b/, 'peste'],
+  // dulciurile înaintea lactatelor: „biscuiți fără lapte” sau „ciocolată cu
+  // lapte” nu sunt lactate
+  [/\bdulciuri|ciocolat|biscuit|napolitan|bomboane|snack|chips|sticksuri|pufuleti|prajitur\b/, 'dulciuri'],
   [/\blactate|lapte|iaurt|branz|cascaval|smantana|unt|kefir|sana|telemea|mozzarella|oua\b/, 'lactate-oua'],
   [/\blegume|fructe|salat[ae]|verdeturi|flori\b/, 'fructe-legume'],
   [/\bpaine|panificatie|patiserie|covrig|bagheta|chifl|lipie|cozonac\b/, 'panificatie'],
   [/\bcereale|musli|corn ?flakes|gem|miere|dulceata|crema de ciocolata|mic dejun\b/, 'mic-dejun'],
-  [/\bdulciuri|ciocolat|biscuit|napolitan|bomboane|snack|chips|sticksuri|pufuleti|prajitur\b/, 'dulciuri'],
   [/\bconserv|muraturi|zacusca|compot\b/, 'conserve'],
   [/\bbautur|suc|apa|bere|vin|cafea|ceai|energizant|cola|limonada|whisky|vodca\b/, 'bauturi'],
   [/\bcongelat|inghetata|frozen\b/, 'congelate'],
