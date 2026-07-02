@@ -41,7 +41,9 @@ function parseArgs(argv) {
     chrome: null,
     pause: true,
     url: null,
-    slug: null
+    slug: null,
+    confirm: false,
+    freshProfile: false
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -53,10 +55,14 @@ function parseArgs(argv) {
     else if (a === '--no-pause') args.pause = false;
     else if (a === '--url') args.url = argv[++i];
     else if (a === '--slug') args.slug = argv[++i];
+    else if (a === '--confirm') args.confirm = true;
+    else if (a === '--fresh-profile') args.freshProfile = true;
     else if (a === '--help' || a === '-h') {
       console.log(
         'Optiuni: --sites profi,metro,la-cocos | --out <folder> | --debug | --chrome <cale> | --headless | --no-pause\n' +
-          '         --url <adresa> --slug <magazin>   (culege o singură pagină, la alegere)'
+          '         --url <adresa> --slug <magazin>   (culege o singură pagină, la alegere)\n' +
+          '         --confirm         (așteaptă Enter la FIECARE pagină — control manual total)\n' +
+          '         --fresh-profile   (profil de browser curat, fără verificările memorate)'
       );
       process.exit(0);
     }
@@ -78,9 +84,32 @@ function baseDir() {
   return isStandaloneBinary() ? path.dirname(process.execPath) : process.cwd();
 }
 
+/** Așteaptă Enter în consolă — folosit când utilizatorul rezolvă verificarea. */
+function waitForEnter(message) {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    rl.question(message, () => {
+      rl.close();
+      resolve();
+    });
+  });
+}
+
 async function harvestSite(port, site, opts) {
-  const { log, debugDir } = opts;
+  const { log, debugDir, confirm } = opts;
   log(`\n=== ${site.name} ===`);
+
+  const onChallenge = async (kind) => {
+    if (kind === 'challenge') {
+      log('');
+      log('  🤖 Site-ul afișează o verificare anti-robot.');
+      log('     Tool-ul NU atinge pagina — rezolvă TU verificarea în fereastra');
+      log('     browserului (bifează caseta / așteaptă să dispară).');
+      await waitForEnter('     Când pagina s-a încărcat normal, apasă Enter aici... ');
+    } else {
+      await waitForEnter('  ⏸  Verifică fereastra browserului; apasă Enter când pagina e gata... ');
+    }
+  };
 
   const visited = new Set();
   const collected = [];
@@ -95,7 +124,11 @@ async function harvestSite(port, site, opts) {
 
     let page;
     try {
-      page = await visitAndExtract(port, url, DOM_EXTRACTOR, { log });
+      page = await visitAndExtract(port, url, DOM_EXTRACTOR, {
+        log,
+        onChallenge,
+        confirmEveryPage: confirm === true
+      });
     } catch (err) {
       log(`    ✘ eroare: ${err.message.split('\n')[0]}`);
       continue;
@@ -167,10 +200,12 @@ async function main() {
   const log = (...xs) => console.log(...xs);
 
   log('==============================================');
-  log('  Coșul Ieftin — Harvester (prețuri → CSV)');
+  log('  Coșul Ieftin — Harvester v1.1 (prețuri → CSV)');
   log('==============================================');
   log('Se deschide o fereastră de browser. NU o închide cât timp rulează.');
-  log('Dacă un site îți cere o verificare anti-robot, rezolv-o în fereastră.');
+  log('Dacă apare o verificare anti-robot: tool-ul se OPREȘTE și așteaptă —');
+  log('o rezolvi TU în fereastră, apoi apeși Enter aici ca să continue.');
+  log('Verificarea trecută se ține minte pentru rulările următoare.');
 
   let sites;
   if (args.url) {
@@ -196,7 +231,11 @@ async function main() {
 
   let browser;
   try {
-    browser = await launchBrowser({ chromePath: args.chrome, headless: args.headless });
+    browser = await launchBrowser({
+      chromePath: args.chrome,
+      headless: args.headless,
+      freshProfile: args.freshProfile
+    });
   } catch (err) {
     log(`\n✘ ${err.message}`);
     process.exitCode = 1;
@@ -208,7 +247,7 @@ async function main() {
   try {
     for (const site of sites) {
       try {
-        const products = await harvestSite(browser.port, site, { log, debugDir });
+        const products = await harvestSite(browser.port, site, { log, debugDir, confirm: args.confirm });
         if (products.length === 0) {
           summary.push({ site: site.name, count: 0, file: null });
           log(`  ✘ ${site.name}: niciun produs extras. Rulează cu --debug și trimite folderul debug/.`);

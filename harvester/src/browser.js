@@ -57,10 +57,26 @@ function findChrome(explicitPath) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function launchBrowser({ chromePath, headless = false } = {}) {
+/**
+ * Profil PERSISTENT (nu temporar): cookie-ul de verificare Cloudflare
+ * (cf_clearance) supraviețuiește între pagini și între rulări — rezolvi
+ * verificarea o singură dată, nu la fiecare pornire.
+ */
+function defaultProfileDir() {
+  const base =
+    process.platform === 'win32'
+      ? process.env.LOCALAPPDATA || os.homedir()
+      : path.join(os.homedir(), '.config');
+  return path.join(base, 'CosulIeftin-Harvester', 'browser-profile');
+}
+
+async function launchBrowser({ chromePath, headless = false, freshProfile = false } = {}) {
   const exe = findChrome(chromePath);
   const port = 9222 + Math.floor(Math.random() * 800);
-  const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cosul-ieftin-'));
+  const profileDir = freshProfile
+    ? fs.mkdtempSync(path.join(os.tmpdir(), 'cosul-ieftin-'))
+    : defaultProfileDir();
+  fs.mkdirSync(profileDir, { recursive: true });
 
   const args = [
     `--remote-debugging-port=${port}`,
@@ -101,10 +117,13 @@ async function launchBrowser({ chromePath, headless = false } = {}) {
       } catch {
         /* deja închis */
       }
-      try {
-        fs.rmSync(profileDir, { recursive: true, force: true });
-      } catch {
-        /* profil temporar rămas — inofensiv */
+      // profilul persistent NU se șterge — păstrează verificarea Cloudflare
+      if (freshProfile) {
+        try {
+          fs.rmSync(profileDir, { recursive: true, force: true });
+        } catch {
+          /* profil temporar rămas — inofensiv */
+        }
       }
     }
   };
@@ -153,7 +172,7 @@ async function visitAndExtract(port, url, domExtractorExpression, opts = {}) {
     }
   });
 
-  const { settleMs = 6000, scrolls = 4, log = () => {}, challengeWaitMs = 120000 } = opts;
+  const { settleMs = 6000, scrolls = 4, log = () => {}, onChallenge = null, confirmEveryPage = false } = opts;
 
   try {
     await Network.enable({});
@@ -162,16 +181,26 @@ async function visitAndExtract(port, url, domExtractorExpression, opts = {}) {
     await Promise.race([Page.loadEventFired(), sleep(30000)]);
     await sleep(settleMs);
 
+    /*
+     * Verificare anti-robot: o SINGURĂ citire pasivă, apoi tool-ul NU MAI
+     * ATINGE pagina deloc — nicio derulare, niciun click, niciun script.
+     * Utilizatorul rezolvă verificarea în fereastră și confirmă cu Enter
+     * în consolă (onChallenge). Orice automatizare în timpul verificării
+     * face Cloudflare să blocheze în buclă.
+     */
     const challenged = async () =>
       (await Runtime.evaluate({ expression: CHALLENGE_CHECK, returnByValue: true })).result.value === true;
-    if (await challenged()) {
-      log('  ⏳ Site-ul cere o verificare anti-robot. Rezolv-o în fereastra browserului (bifează caseta)...');
-      const deadline = Date.now() + challengeWaitMs;
-      while (Date.now() < deadline && (await challenged())) await sleep(2000);
-      if (await challenged()) log('  ✘ Verificarea nu a fost trecută — pagina se sare.');
-      else {
-        log('  ✔ Verificare trecută, continui.');
-        await sleep(settleMs);
+
+    if (confirmEveryPage) {
+      if (onChallenge) await onChallenge('confirm');
+      await sleep(1000);
+    } else if (await challenged()) {
+      if (onChallenge) {
+        await onChallenge('challenge');
+        await sleep(1500);
+      } else {
+        log('  ✘ Verificare anti-robot detectată și nimeni nu o poate rezolva — pagina se sare.');
+        return { html: '', finalUrl: url, jsonBodies, domProducts: [] };
       }
     }
 

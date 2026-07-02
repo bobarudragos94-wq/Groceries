@@ -8,7 +8,7 @@ Profi, Metro și La Cocoș blochează serverele din cloud (Cloudflare/Akamai), d
 2. Dublu-click pe el.
    - Windows SmartScreen poate avertiza „editor necunoscut” → *More info* → *Run anyway*.
    - Se deschide o fereastră de browser: **nu o închide** cât timp rulează.
-   - Dacă un site afișează o verificare anti-robot („Verify you are human”), **bifeaz-o tu în fereastră** — programul așteaptă și continuă singur.
+   - Dacă un site afișează o verificare anti-robot („Verify you are human”): programul **se oprește complet și nu atinge pagina** — o rezolvi tu în fereastră, apoi **apeși Enter în fereastra neagră** și el continuă. Verificarea trecută se memorează (profil de browser persistent), deci la rulările următoare de obicei nu mai apare.
 3. La final găsești lângă executabil fișiere de forma `profi-2026-07-02.csv`, `metro-2026-07-02.csv`, `la-cocos-2026-07-02.csv`.
 4. Deschide aplicația → **Admin → Import** → încarcă fiecare CSV.
 
@@ -20,6 +20,8 @@ CosulIeftin-Harvester.exe --out C:\csv               folderul de ieșire
 CosulIeftin-Harvester.exe --debug                    salvează HTML/JSON brut în debug\
 CosulIeftin-Harvester.exe --chrome "C:\...\chrome.exe"  cale explicită către browser
 CosulIeftin-Harvester.exe --url https://... --slug profi   culege o singură pagină, la alegere
+CosulIeftin-Harvester.exe --confirm                  așteaptă Enter la FIECARE pagină (control manual total)
+CosulIeftin-Harvester.exe --fresh-profile            profil de browser curat (uită verificările memorate)
 ```
 
 ## Cum funcționează
