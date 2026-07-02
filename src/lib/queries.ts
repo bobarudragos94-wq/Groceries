@@ -1,6 +1,20 @@
 import { db } from './db';
 import { normalizeText } from './normalize';
+import { canonicalToken } from './matching';
 import { CATEGORIES, mapCategory } from './categories';
+
+/** Același produs într-un alt supermarket (din grupul de potrivire). */
+export interface ProductOffer {
+  productId: number;
+  supermarketSlug: string;
+  supermarketName: string;
+  name: string;
+  price: number;
+  oldPrice: number | null;
+  unitSize: string | null;
+  city: string | null;
+  url: string | null;
+}
 
 /** Un produs cu cel mai bun preț aplicabil (național sau din orașul cerut). */
 export interface ProductHit {
@@ -19,6 +33,10 @@ export interface ProductHit {
   perUnit: string | null;
   city: string | null;
   updatedAt: string;
+  /** grupul de produse identice între supermarketuri (null = negrupate) */
+  matchGroupId: number | null;
+  /** prețul aceluiași produs în fiecare supermarket unde a fost recunoscut */
+  offers?: ProductOffer[];
 }
 
 interface RawRow {
@@ -41,7 +59,8 @@ function rowToHit(r: RawRow): ProductHit {
     pricePerUnit: r.price_per_unit != null ? Number(r.price_per_unit) : null,
     perUnit: (r.per_unit as string) ?? null,
     city: (r.city as string) ?? null,
-    updatedAt: String(r.updated_at)
+    updatedAt: String(r.updated_at),
+    matchGroupId: r.match_group_id != null ? Number(r.match_group_id) : null
   };
 }
 
@@ -73,33 +92,44 @@ export async function searchProducts(opts: {
   const rankArgs: string[] = [];
 
   if (q) {
-    const tokens = normalizeText(q).split(' ').filter(Boolean);
+    const rawTokens = normalizeText(q).split(' ').filter(Boolean);
+    // fiecare cuvânt din interogare are și o formă canonică (sinonime +
+    // stemming — „dark” = „neagra”, „rosii” = „rosie”) care se potrivește
+    // pe products.match_tokens; cuvintele de umplutură („cutie”, „de”)
+    // nu restrâng căutarea dacă mai rămâne măcar un cuvânt cu sens
+    let tokens = rawTokens.map((raw) => ({ raw, canon: canonicalToken(raw) ?? raw, ignorable: canonicalToken(raw) == null }));
+    if (tokens.some((t) => !t.ignorable)) tokens = tokens.filter((t) => !t.ignorable);
+
     // potrivire pe CUVINTE întregi, nu substring — „oua” nu are voie să
     // se potrivească cu „Roua”; în modul prefix, cuvântul poate continua
-    const wordMatch = `instr(' ' || p.normalized_name || ' ', ?) > 0`;
+    const wordMatch = `(instr(' ' || p.normalized_name || ' ', ?) > 0 OR instr(' ' || COALESCE(p.match_tokens, '') || ' ', ?) > 0)`;
+    const prefixMatch = `((' ' || p.normalized_name) LIKE ? OR (' ' || COALESCE(p.match_tokens, '')) LIKE ?)`;
     for (const t of tokens) {
-      where.push(prefix ? `(' ' || p.normalized_name) LIKE ?` : wordMatch);
-      args.push(prefix ? `% ${t}%` : ` ${t} `);
+      where.push(prefix ? prefixMatch : wordMatch);
+      if (prefix) args.push(`% ${t.raw}%`, `% ${t.canon}%`);
+      else args.push(` ${t.raw} `, ` ${t.canon} `);
     }
     if (!strict && tokens.length === 1) {
       // un singur cuvânt generic — acceptă și potrivirea pe categorie,
       // dar clasată după potrivirile directe pe nume
       const catSlug = mapCategory(q);
       if (catSlug !== 'altele') {
-        where[where.length - 1] = `(${wordMatch} OR p.category = ?)`;
+        where[where.length - 1] = `(${prefix ? prefixMatch : wordMatch} OR p.category = ?)`;
         args.push(catSlug);
       }
     }
 
     // clasament: (1) categoria potrivită întâi — laptele de băut înaintea
     // laptelui pentru pisici; (2) cuvântul căutat cât mai devreme în nume —
-    // „Lapte UHT” înaintea „Telemea din lapte”; (3) preț crescător
+    // „Lapte UHT” înaintea „Telemea din lapte”; (3) preț crescător.
+    // Potrivirile doar prin sinonime (match_tokens) au instr()=0 pe nume →
+    // sunt clasate după potrivirile directe, ceea ce e ordinea dorită.
     const catSlug = mapCategory(q);
     const posExprs = tokens.map(() => `instr(' ' || p.normalized_name || ' ', ?)`);
     const rawMinPos = posExprs.length > 1 ? `min(${posExprs.join(', ')})` : posExprs[0];
-    // instr() = 0 înseamnă „nu apare” (potrivire doar pe categorie) — ultimul loc, nu primul
+    // instr() = 0 înseamnă „nu apare” (potrivire pe categorie/sinonim) — ultimul loc, nu primul
     const minPos = `(CASE WHEN ${rawMinPos} = 0 THEN 9999 ELSE ${rawMinPos} END)`;
-    const posArgs = tokens.map((t) => (prefix ? ` ${t}` : ` ${t} `));
+    const posArgs = tokens.map((t) => (prefix ? ` ${t.raw}` : ` ${t.raw} `));
     // minPos conține instr() de două ori (în CASE și în ELSE) — argumentele se dublează
     if (catSlug !== 'altele') {
       rankExpr = `(CASE WHEN p.category = ? THEN 0 ELSE 1 END) * 1000 + ${minPos}`;
@@ -128,6 +158,7 @@ export async function searchProducts(opts: {
 
   const sql = `
     SELECT p.id, p.name, p.brand, p.category, p.unit_size, p.image_url, p.url,
+           p.match_group_id,
            s.slug AS supermarket_slug, s.name AS supermarket_name,
            pr.price, pr.old_price, pr.price_per_unit, pr.per_unit, pr.updated_at,
            st.city, ${rankExpr} AS match_rank
@@ -147,7 +178,87 @@ export async function searchProducts(opts: {
     const id = Number(r.id);
     if (!best.has(id)) best.set(id, rowToHit(r));
   }
-  return [...best.values()].slice(0, limit);
+
+  let hits = [...best.values()];
+  // fără filtru de supermarket, produsele recunoscute ca identice între
+  // lanțuri se afișează o singură dată, cu prețul din fiecare lanț atașat
+  if (!supermarket) {
+    hits = await attachOffersAndDedupe(hits, { city, county });
+  }
+  return hits.slice(0, limit);
+}
+
+/**
+ * Pentru rezultatele care au un grup de potrivire, aduce prețul aceluiași
+ * produs din fiecare supermarket (respectând filtrul de județ/oraș) și
+ * păstrează un singur card per grup — cel mai bine clasat.
+ */
+async function attachOffersAndDedupe(
+  hits: ProductHit[],
+  opts: { city?: string; county?: string }
+): Promise<ProductHit[]> {
+  const groupIds = [...new Set(hits.map((h) => h.matchGroupId).filter((g): g is number => g != null))];
+  if (groupIds.length === 0) return hits;
+
+  const where: string[] = [`p.match_group_id IN (${groupIds.map(() => '?').join(',')})`];
+  const args: (string | number)[] = [...groupIds];
+  if (opts.city) {
+    where.push(`(pr.store_id = 0 OR st.city = ?)`);
+    args.push(opts.city);
+  }
+  if (opts.county) {
+    where.push(`(pr.store_id = 0 OR st.county = ?)`);
+    args.push(opts.county);
+  }
+
+  const rs = await db().execute({
+    sql: `SELECT p.id, p.match_group_id, p.name, p.unit_size, p.url,
+                 s.slug AS supermarket_slug, s.name AS supermarket_name,
+                 pr.price, pr.old_price, st.city
+          FROM products p
+          JOIN supermarkets s ON s.id = p.supermarket_id
+          JOIN prices pr ON pr.product_id = p.id
+          LEFT JOIN stores st ON st.id = pr.store_id
+          WHERE ${where.join(' AND ')}
+          ORDER BY pr.price ASC`,
+    args
+  });
+
+  // cel mai mic preț per (grup, supermarket)
+  const byGroup = new Map<number, Map<string, ProductOffer>>();
+  for (const r of rs.rows as unknown as RawRow[]) {
+    const group = Number(r.match_group_id);
+    const slug = String(r.supermarket_slug);
+    const perSm = byGroup.get(group) ?? byGroup.set(group, new Map()).get(group)!;
+    if (!perSm.has(slug)) {
+      perSm.set(slug, {
+        productId: Number(r.id),
+        supermarketSlug: slug,
+        supermarketName: String(r.supermarket_name),
+        name: String(r.name),
+        price: Number(r.price),
+        oldPrice: r.old_price != null ? Number(r.old_price) : null,
+        unitSize: (r.unit_size as string) ?? null,
+        city: (r.city as string) ?? null,
+        url: (r.url as string) ?? null
+      });
+    }
+  }
+
+  const seenGroups = new Set<number>();
+  const out: ProductHit[] = [];
+  for (const hit of hits) {
+    if (hit.matchGroupId == null) {
+      out.push(hit);
+      continue;
+    }
+    if (seenGroups.has(hit.matchGroupId)) continue;
+    seenGroups.add(hit.matchGroupId);
+    const offers = [...(byGroup.get(hit.matchGroupId)?.values() ?? [])].sort((a, b) => a.price - b.price);
+    if (offers.length > 1) hit.offers = offers;
+    out.push(hit);
+  }
+  return out;
 }
 
 export interface BasketItem {

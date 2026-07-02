@@ -3,6 +3,7 @@ import { db } from '../src/lib/db';
 import { ensureSchema } from '../src/lib/schema';
 import { parseCsv, rowsToScrapeResults } from './csv';
 import { saveScrapeResult } from './save';
+import { rematchAllProducts } from '../src/lib/match-products';
 
 /**
  * Import de produse din CSV (aceeași conductă de salvare ca scraperele).
@@ -34,6 +35,8 @@ async function main(): Promise<void> {
     console.log(`✔ ${result.supermarket.name}: ${products} produse importate`);
     total += products;
   }
+  const m = await rematchAllProducts();
+  console.log(`Potrivire între lanțuri: ${m.grouped} produse în ${m.groups} grupuri.`);
   console.log(`Gata: ${total} produse din ${file}.`);
 }
 

@@ -6,6 +6,7 @@ import { profiAdapter } from './adapters/profi';
 import { auchanAdapter } from './adapters/auchan';
 import { pennyAdapter } from './adapters/penny';
 import { recordRun, saveScrapeResult } from './save';
+import { rematchAllProducts } from '../src/lib/match-products';
 import type { StoreAdapter } from './types';
 
 /**
@@ -65,6 +66,17 @@ async function main(): Promise<void> {
       const msg = (err as Error).message;
       console.error(`  ✘ eșuat: ${msg}`);
       await recordRun(slug, startedAt, 'error', 0, msg).catch(() => undefined);
+    }
+  }
+
+  // după orice actualizare regrupăm produsele identice între lanțuri
+  // („Apă Bucovina” la Lidl = „Bucovina apă” la Auchan)
+  if (succeeded > 0) {
+    try {
+      const m = await rematchAllProducts();
+      console.log(`\nPotrivire între lanțuri: ${m.grouped} produse în ${m.groups} grupuri.`);
+    } catch (err) {
+      console.error(`Potrivirea produselor a eșuat: ${(err as Error).message}`);
     }
   }
 

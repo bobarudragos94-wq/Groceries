@@ -81,7 +81,24 @@ npm run scrape                       # all stores
 npm run scrape -- --store lidl,kaufland,auchan,penny
 npm run import:csv -- data/sample-import.csv
 npm run db:recompute-categories      # re-map canonical categories after rule changes
+npm run db:match                     # re-run cross-chain product matching (also runs after every scrape/import)
+npm run test:matching                # accuracy suite for the product matcher
 ```
+
+## Product matching across chains
+
+The same product is named differently in every chain — Auchan says „Bucovina apă minerală 2L”, Lidl says „Apă Bucovina 2 l”; „Kinder Bueno Dark” vs „Tablete ciocolată neagră Kinder”. `src/lib/matching.ts` recognizes these as one product, deterministically (no external services — runs in GitHub Actions and in the API):
+
+1. **Signature per product**: brand (a ~200-entry lexicon of Romanian supermarket brands + the brand reported by the store), canonical descriptor words (RO/EN synonyms — „dark”=„neagră”, „acidulată”=„carbogazoasă” — plus a light Romanian stemmer for plurals, with packaging/filler words like „tablete”, „PET”, „cutie” removed), variant markers (neagră/albă, carbogazoasă/plată, zero, bio…), percentages (milk fat, cocoa) and the quantity in base units (kg/l/buc).
+2. **Match score with hard gates** — different quantity, different percentage, different variant, or two *different known brands* can never match; otherwise a weighted word-overlap score plus a shared-brand bonus decides (threshold in `MATCH_THRESHOLD`). Precision over recall: a wrong merge shows the user a wrong price, so ambiguous pairs stay separate.
+3. **Grouping** (`products.match_group_id`): best-score-first greedy grouping with the guarantee of **at most one product per supermarket per group**. Recomputed automatically after every scrape/import.
+
+What the user gets:
+
+- **Search understands synonyms and word order** — every query word matches either the product name or its canonical tokens (`products.match_tokens`), so „kinder dark” also finds Kaufland's „Tablete ciocolată neagră Kinder”.
+- **One card per product, all prices attached** — grouped products appear once in search results with an `offers` list (cheapest applicable price per supermarket, respecting the județ filter), rendered as „Același produs: Lidl 4,99 · Kaufland 5,49”.
+
+The matcher has an accuracy suite (`scripts/test-matching.ts`) with real-world shaped cases (word order, synonyms, multipacks „6x0,5l”=„3l”, flavor/variant/fat-percentage conflicts, brand conflicts like Coca-Cola vs Pepsi). Run it after any change to `src/lib/matching.ts`.
 
 ### Adding a new supermarket
 

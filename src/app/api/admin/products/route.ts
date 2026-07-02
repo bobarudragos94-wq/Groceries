@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { isAdmin } from '@/lib/admin-auth';
 import { normalizeText, parseUnitSize, pricePerUnit } from '@/lib/normalize';
+import { buildMatchTokens, extractSignature } from '@/lib/matching';
 import { mapCategory } from '@/lib/categories';
 
 export const dynamic = 'force-dynamic';
@@ -56,12 +57,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const parsed = parseUnitSize(unitSize);
   const externalId = `admin-${normalizeText(name).replace(/\s+/g, '-').slice(0, 60)}`;
+  const finalCategory = category || mapCategory(null, String(name));
+  const matchTokens = buildMatchTokens(
+    extractSignature({
+      name: String(name),
+      brand: brand ?? null,
+      category: finalCategory,
+      quantity: parsed?.quantity ?? null,
+      unit: parsed?.unit ?? null
+    })
+  );
   const rs = await client.execute({
-    sql: `INSERT INTO products (supermarket_id, external_id, name, normalized_name, brand, category,
-            unit_size, quantity, unit)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    sql: `INSERT INTO products (supermarket_id, external_id, name, normalized_name, match_tokens, brand,
+            category, unit_size, quantity, unit)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(supermarket_id, external_id) DO UPDATE SET
             name = excluded.name, normalized_name = excluded.normalized_name,
+            match_tokens = excluded.match_tokens,
             brand = excluded.brand, category = excluded.category, unit_size = excluded.unit_size,
             quantity = excluded.quantity, unit = excluded.unit
           RETURNING id`,
@@ -70,8 +82,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       externalId,
       String(name),
       buildNormalizedName(String(name), brand),
+      matchTokens,
       brand ?? null,
-      category || mapCategory(null, String(name)),
+      finalCategory,
       unitSize ?? null,
       parsed?.quantity ?? null,
       parsed?.unit ?? null

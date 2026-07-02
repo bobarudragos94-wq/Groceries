@@ -14,7 +14,9 @@ import type { Client } from '@libsql/client';
  */
 export const MIGRATION_STATEMENTS: string[] = [
   `ALTER TABLE stores ADD COLUMN county TEXT`,
-  `ALTER TABLE stores ADD COLUMN postal_code TEXT`
+  `ALTER TABLE stores ADD COLUMN postal_code TEXT`,
+  `ALTER TABLE products ADD COLUMN match_tokens TEXT`,
+  `ALTER TABLE products ADD COLUMN match_group_id INTEGER`
 ];
 
 /** Aplică schema + migrările (idempotent). */
@@ -67,6 +69,8 @@ export const SCHEMA_STATEMENTS: string[] = [
     external_id TEXT NOT NULL,
     name TEXT NOT NULL,
     normalized_name TEXT NOT NULL,
+    match_tokens TEXT,
+    match_group_id INTEGER,
     brand TEXT,
     category TEXT,
     raw_category TEXT,
@@ -80,6 +84,7 @@ export const SCHEMA_STATEMENTS: string[] = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_products_normalized_name ON products(normalized_name)`,
   `CREATE INDEX IF NOT EXISTS idx_products_category ON products(category)`,
+  `CREATE INDEX IF NOT EXISTS idx_products_match_group ON products(match_group_id)`,
   `CREATE TABLE IF NOT EXISTS prices (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,

@@ -3,6 +3,7 @@ import { db } from '../src/lib/db';
 import { mapCategory } from '../src/lib/categories';
 import { resolveCounty } from '../src/lib/counties';
 import { normalizeText, parseUnitSize, pricePerUnit } from '../src/lib/normalize';
+import { buildMatchTokens, extractSignature } from '../src/lib/matching';
 import type { ScrapeResult } from './types';
 
 /**
@@ -53,12 +54,25 @@ export async function saveScrapeResult(result: ScrapeResult): Promise<{ products
     const ppu = p.pricePerUnit ?? pricePerUnit(p.price, parsed);
     const category = mapCategory(p.rawCategory, p.name);
 
+    // cuvintele canonice pentru căutare cu sinonime („dark” = „neagră”);
+    // grupurile cross-supermarket se recalculează după rulare (rematchAllProducts)
+    const matchTokens = buildMatchTokens(
+      extractSignature({
+        name: p.name,
+        brand: p.brand,
+        category,
+        quantity: parsed?.quantity ?? null,
+        unit: parsed?.unit ?? null
+      })
+    );
+
     const rs = await client.execute({
-      sql: `INSERT INTO products (supermarket_id, external_id, name, normalized_name, brand, category,
-              raw_category, unit_size, quantity, unit, image_url, url)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      sql: `INSERT INTO products (supermarket_id, external_id, name, normalized_name, match_tokens, brand,
+              category, raw_category, unit_size, quantity, unit, image_url, url)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(supermarket_id, external_id) DO UPDATE SET
               name = excluded.name, normalized_name = excluded.normalized_name,
+              match_tokens = excluded.match_tokens,
               brand = COALESCE(excluded.brand, products.brand),
               category = excluded.category, raw_category = excluded.raw_category,
               unit_size = COALESCE(excluded.unit_size, products.unit_size),
@@ -72,6 +86,7 @@ export async function saveScrapeResult(result: ScrapeResult): Promise<{ products
         p.externalId,
         p.name,
         buildNormalizedName(p.name, p.brand),
+        matchTokens,
         p.brand ?? null,
         category,
         p.rawCategory ?? null,

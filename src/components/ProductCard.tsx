@@ -3,6 +3,18 @@
 import { useState } from 'react';
 import { addToBasket } from '@/lib/basket-client';
 
+export interface ProductOffer {
+  productId: number;
+  supermarketSlug: string;
+  supermarketName: string;
+  name: string;
+  price: number;
+  oldPrice: number | null;
+  unitSize: string | null;
+  city: string | null;
+  url: string | null;
+}
+
 export interface Product {
   id: number;
   name: string;
@@ -19,6 +31,9 @@ export interface Product {
   perUnit: string | null;
   city: string | null;
   updatedAt: string;
+  matchGroupId?: number | null;
+  /** același produs, recunoscut și în alte supermarketuri */
+  offers?: ProductOffer[];
 }
 
 const BADGE_COLORS: Record<string, string> = {
@@ -76,6 +91,21 @@ export function ProductCard({ product: p }: { product: Product }): JSX.Element {
           {p.pricePerUnit ? ` · ${p.pricePerUnit.toFixed(2)} lei/${p.perUnit}` : ''}
           {p.city ? ` · ${p.city}` : ''}
         </p>
+        {p.offers && p.offers.length > 1 && (
+          <div className="mt-1 flex flex-wrap items-center gap-1">
+            <span className="text-[10px] uppercase tracking-wide text-gray-400">Același produs:</span>
+            {p.offers.map((o) => (
+              <span
+                key={o.supermarketSlug}
+                className={`rounded-full px-1.5 py-0.5 text-[11px] font-medium ${
+                  BADGE_COLORS[o.supermarketSlug] ?? 'bg-gray-100 text-gray-700'
+                }`}
+              >
+                {o.supermarketName} {o.price.toFixed(2)}
+              </span>
+            ))}
+          </div>
+        )}
         <div className="mt-auto flex items-end justify-between pt-1">
           <div>
             <span className="text-lg font-bold text-brand-600">{p.price.toFixed(2)} lei</span>
