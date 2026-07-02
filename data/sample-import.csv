@@ -1,0 +1,6 @@
+supermarket,external_id,name,brand,category,unit_size,price,old_price,city,store_external_id,image_url,url
+profi,profi-lapte-zuzu-15,Lapte Zuzu 1.5%,Zuzu,lactate,1 l,6.49,,,,,
+profi,profi-paine-alba,Pâine albă feliată,,panificatie,500 g,3.29,,,,,
+profi,profi-oua-10,Ouă proaspete M,,lactate oua,10 buc,12.79,,,,,
+carrefour,carr-lapte-zuzu-15,Lapte Zuzu 1.5%,Zuzu,lactate,1 l,6.29,6.99,București,carr-buc-orhideea,,
+carrefour,carr-ulei-1l,Ulei floarea-soarelui,Carrefour Classic,alimente de baza,1 l,8.49,,București,carr-buc-orhideea,,

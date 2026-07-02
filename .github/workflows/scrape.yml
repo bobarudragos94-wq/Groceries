@@ -1,0 +1,42 @@
+# Rulează scraperele de prețuri în fiecare zi și scrie rezultatele în Turso.
+# Necesită secretele TURSO_DATABASE_URL și TURSO_AUTH_TOKEN în repo.
+name: Scrape prices
+
+on:
+  schedule:
+    # zilnic la 04:30 UTC (06:30/07:30 ora României)
+    - cron: '30 4 * * *'
+  workflow_dispatch:
+    inputs:
+      stores:
+        description: 'Magazine (ex: lidl,kaufland) — gol = toate'
+        required: false
+        default: ''
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # Lidl + Kaufland merg din cloud; Profi (Cloudflare) de regulă nu —
+      # scraperul raportează per magazin și iese cu succes dacă măcar unul a mers.
+      - name: Scrape
+        env:
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+        run: |
+          STORES="${{ github.event.inputs.stores }}"
+          if [ -n "$STORES" ]; then
+            npm run scrape -- --store "$STORES"
+          else
+            npm run scrape -- --store lidl,kaufland
+          fi
