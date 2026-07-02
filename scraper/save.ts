@@ -49,7 +49,8 @@ export async function saveScrapeResult(result: ScrapeResult): Promise<{ products
   for (const p of result.products) {
     if (!p.externalId || !p.name || !(p.price > 0)) continue;
 
-    const parsed = parseUnitSize(p.unitSizeText);
+    // gramajul e uneori doar în numele produsului ("Lapte Zuzu 1,5% 1 l")
+    const parsed = parseUnitSize(p.unitSizeText) ?? parseUnitSize(p.name);
     const ppu = p.pricePerUnit ?? pricePerUnit(p.price, parsed);
     const category = mapCategory(p.rawCategory, p.name);
 

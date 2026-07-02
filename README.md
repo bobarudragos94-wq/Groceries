@@ -12,12 +12,16 @@ Search day-to-day groceries across Romanian supermarkets, build your recurring b
 | **Kaufland** | Store-finder JSON (204 stores, county derived from postal code) + weekly offers JSON embedded in page + per-store offer lists | ~350 offer products/week × **all 42 counties** (~14,000 store prices) | ✅ verified live |
 | **Auchan** | VTEX shop API (category tree + paginated product search) | Full online-shop catalog (thousands of products); national online prices | ✅ verified live |
 | **Penny** | Public `product-discovery` API | ~290 published products (weekly assortment), prices in bani + price/unit; national | ✅ verified live |
-| **Profi** | Headless Chromium (`playwright-core`) | — | ⚠️ Cloudflare hard-blocks datacenter IPs; works only from a residential IP (laptop/home server). Fallback: CSV import |
+| **Profi** | **Harvester** (desktop tool, see below) or headless Chromium from a residential IP | — | ⚠️ Cloudflare hard-blocks datacenter IPs → run the Harvester on your PC, upload the CSV |
 | **Carrefour** | `catalogsearch` HTML pages are server-rendered with embedded prices (verified reachable) | — | 🔜 ready to implement |
 | **Mega Image** | GraphQL gateway (`/api/v1`) with persisted queries | — | 🔜 needs persisted-query extraction from JS bundles |
-| **Metro** | — | — | ❌ 403 for datacenter IPs; also requires customer login for real prices |
+| **Metro** | **Harvester** (desktop tool, see below) | — | ⚠️ 403 for datacenter IPs; note real prices may require customer login |
 | **Selgros** | offers published as PDF catalogs | — | ❌ no structured source; CSV import |
-| **La Cocoș** | — | — | ❌ 403 for datacenter IPs; retry from residential IP |
+| **La Cocoș** | **Harvester** (desktop tool, see below) | — | ⚠️ 403 for datacenter IPs |
+
+### Harvester — the desktop companion for blocked sites
+
+`harvester/` contains a standalone Windows tool (`CosulIeftin-Harvester.exe`, built via Node SEA) you run **on your own PC**: it drives your installed Chrome/Edge (real browser, residential IP — passes Cloudflare, and you can solve a challenge by clicking it), extracts products via intercepted JSON APIs → JSON-LD → DOM heuristics, and writes CSVs in the exact import format. Upload them in `/admin` → *Import*. Build: `cd harvester && npm install && node build.js`, or the *Build harvester* GitHub Actions workflow (artifact). Details: [harvester/README.md](harvester/README.md).
 
 ## Weekly guarantee — no silent partial results
 

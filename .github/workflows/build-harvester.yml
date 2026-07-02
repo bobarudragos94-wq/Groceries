@@ -1,0 +1,37 @@
+# Construiește executabilul Windows al harvester-ului și îl publică drept
+# artifact descărcabil: Actions → „Build harvester” → run → Artifacts.
+name: Build harvester
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'harvester/**'
+    branches:
+      - main
+      - claude/romanian-supermarket-scraper-o1y4wm
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # trebuie să existe și ca release Windows pe nodejs.org (build.js
+          # folosește exact aceeași versiune pentru blobul SEA)
+          node-version: 22.22.2
+
+      - run: npm ci
+        working-directory: harvester
+
+      - run: node build.js
+        working-directory: harvester
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CosulIeftin-Harvester-windows
+          path: harvester/dist/CosulIeftin-Harvester.exe
+          retention-days: 30

@@ -2,6 +2,8 @@ import type { ScrapeResult, ScrapedProduct, ScrapedStore } from './types';
 
 /** Parser CSV minimal cu suport pentru ghilimele ("a,b", "" escapat). */
 export function parseCsv(text: string): Array<Record<string, string>> {
+  // fișierele salvate din Excel încep adesea cu BOM — l-am elimina din antet
+  text = text.replace(/^﻿/, '');
   const rows: string[][] = [];
   let row: string[] = [];
   let field = '';
