@@ -6,6 +6,40 @@
  *  - `prices` = prețul curent (unic per produs + magazin).
  *  - `price_history` = istoric pentru grafice/alerte (se adaugă la fiecare schimbare).
  */
+import type { Client } from '@libsql/client';
+
+/**
+ * Migrări pentru baze create înainte de adăugarea unei coloane.
+ * Se rulează după SCHEMA_STATEMENTS; erorile "duplicate column" se ignoră.
+ */
+export const MIGRATION_STATEMENTS: string[] = [
+  `ALTER TABLE stores ADD COLUMN county TEXT`,
+  `ALTER TABLE stores ADD COLUMN postal_code TEXT`
+];
+
+/** Aplică schema + migrările (idempotent). */
+export async function ensureSchema(client: Client): Promise<void> {
+  // prima trecere poate eșua pe indecși care depind de coloane noi
+  // (bază creată înainte de migrare) — migrările rulează între treceri
+  for (const stmt of SCHEMA_STATEMENTS) {
+    try {
+      await client.execute(stmt);
+    } catch (err) {
+      if (!/no such column/i.test((err as Error).message)) throw err;
+    }
+  }
+  for (const stmt of MIGRATION_STATEMENTS) {
+    try {
+      await client.execute(stmt);
+    } catch (err) {
+      if (!/duplicate column/i.test((err as Error).message)) throw err;
+    }
+  }
+  for (const stmt of SCHEMA_STATEMENTS) {
+    await client.execute(stmt);
+  }
+}
+
 export const SCHEMA_STATEMENTS: string[] = [
   `CREATE TABLE IF NOT EXISTS supermarkets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -19,11 +53,14 @@ export const SCHEMA_STATEMENTS: string[] = [
     external_id TEXT NOT NULL,
     name TEXT NOT NULL,
     city TEXT NOT NULL,
+    county TEXT,
+    postal_code TEXT,
     address TEXT,
     lat REAL,
     lng REAL,
     UNIQUE(supermarket_id, external_id)
   )`,
+  `CREATE INDEX IF NOT EXISTS idx_stores_county ON stores(county)`,
   `CREATE TABLE IF NOT EXISTS products (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     supermarket_id INTEGER NOT NULL REFERENCES supermarkets(id) ON DELETE CASCADE,

@@ -1,6 +1,7 @@
 import type { Client, InStatement } from '@libsql/client';
 import { db } from '../src/lib/db';
 import { mapCategory } from '../src/lib/categories';
+import { resolveCounty } from '../src/lib/counties';
 import { normalizeText, parseUnitSize, pricePerUnit } from '../src/lib/normalize';
 import type { ScrapeResult } from './types';
 
@@ -17,14 +18,27 @@ export async function saveScrapeResult(result: ScrapeResult): Promise<{ products
 
   const storeIdByExternal = new Map<string, number>();
   for (const s of result.stores) {
+    const county = resolveCounty({ county: s.county, postalCode: s.postalCode, city: s.city });
     const rs = await client.execute({
-      sql: `INSERT INTO stores (supermarket_id, external_id, name, city, address, lat, lng)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+      sql: `INSERT INTO stores (supermarket_id, external_id, name, city, county, postal_code, address, lat, lng)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(supermarket_id, external_id) DO UPDATE SET
-              name = excluded.name, city = excluded.city, address = excluded.address,
-              lat = excluded.lat, lng = excluded.lng
+              name = excluded.name, city = excluded.city,
+              county = COALESCE(excluded.county, stores.county),
+              postal_code = COALESCE(excluded.postal_code, stores.postal_code),
+              address = excluded.address, lat = excluded.lat, lng = excluded.lng
             RETURNING id`,
-      args: [supermarketId, s.externalId, s.name, s.city, s.address ?? null, s.lat ?? null, s.lng ?? null]
+      args: [
+        supermarketId,
+        s.externalId,
+        s.name,
+        s.city,
+        county,
+        s.postalCode ?? null,
+        s.address ?? null,
+        s.lat ?? null,
+        s.lng ?? null
+      ]
     });
     storeIdByExternal.set(s.externalId, Number(rs.rows[0].id));
   }

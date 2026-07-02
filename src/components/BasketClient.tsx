@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { getBasket, setBasket, getCity, type StoredBasketItem } from '@/lib/basket-client';
+import { getBasket, setBasket, getCounty, type StoredBasketItem } from '@/lib/basket-client';
 import type { Product } from './ProductCard';
 
 interface ComparisonItem {
@@ -51,7 +51,7 @@ export function BasketClient(): JSX.Element {
       const res = await fetch('/api/compare', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: getBasket(), city: getCity() || undefined })
+        body: JSON.stringify({ items: getBasket(), county: getCounty() || undefined })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Eroare la comparare');

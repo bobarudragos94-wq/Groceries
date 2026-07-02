@@ -21,6 +21,7 @@ const OFFER_PAGES = [
 export const profiAdapter: StoreAdapter = {
   slug: 'profi',
   name: 'Profi',
+  minProducts: 50,
 
   async scrape(): Promise<ScrapeResult> {
     const warnings: string[] = [];

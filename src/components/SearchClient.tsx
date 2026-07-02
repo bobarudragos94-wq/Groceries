@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ProductCard, type Product } from './ProductCard';
-import { getCity, setCity } from '@/lib/basket-client';
+import { getCounty, setCounty } from '@/lib/basket-client';
 
 interface Meta {
   supermarkets: Array<{ slug: string; name: string; productCount: number }>;
   cities: string[];
+  counties: string[];
   categories: Array<{ slug: string; label: string }>;
   lastUpdate: string | null;
 }
@@ -14,7 +15,7 @@ interface Meta {
 export function SearchClient(): JSX.Element {
   const [q, setQ] = useState('');
   const [category, setCategory] = useState('');
-  const [city, setCityState] = useState('');
+  const [county, setCountyState] = useState('');
   const [products, setProducts] = useState<Product[]>([]);
   const [meta, setMeta] = useState<Meta | null>(null);
   const [loading, setLoading] = useState(false);
@@ -22,7 +23,7 @@ export function SearchClient(): JSX.Element {
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
   useEffect(() => {
-    setCityState(getCity());
+    setCountyState(getCounty());
     fetch('/api/meta')
       .then((r) => r.json())
       .then(setMeta)
@@ -40,7 +41,7 @@ export function SearchClient(): JSX.Element {
       const params = new URLSearchParams();
       if (query) params.set('q', query);
       if (cat) params.set('category', cat);
-      if (cty) params.set('city', cty);
+      if (cty) params.set('county', cty);
       const res = await fetch(`/api/search?${params}`);
       const data = await res.json();
       setProducts(data.products ?? []);
@@ -54,19 +55,19 @@ export function SearchClient(): JSX.Element {
     setQ(value);
     setCategory('');
     clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => runSearch(value, '', city), 350);
+    debounceRef.current = setTimeout(() => runSearch(value, '', county), 350);
   };
 
   const onCategoryClick = (slug: string): void => {
     const next = slug === category ? '' : slug;
     setCategory(next);
     setQ('');
-    runSearch('', next, city);
+    runSearch('', next, county);
   };
 
-  const onCityChange = (value: string): void => {
-    setCityState(value);
-    setCity(value);
+  const onCountyChange = (value: string): void => {
+    setCountyState(value);
+    setCounty(value);
     runSearch(q, category, value);
   };
 
@@ -83,12 +84,13 @@ export function SearchClient(): JSX.Element {
         />
         <div className="flex items-center gap-2">
           <select
-            value={city}
-            onChange={(e) => onCityChange(e.target.value)}
+            value={county}
+            onChange={(e) => onCountyChange(e.target.value)}
             className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm"
+            aria-label="Județul meu"
           >
-            <option value="">Toate orașele</option>
-            {meta?.cities.map((c) => (
+            <option value="">Toate județele</option>
+            {meta?.counties.map((c) => (
               <option key={c} value={c}>
                 {c}
               </option>

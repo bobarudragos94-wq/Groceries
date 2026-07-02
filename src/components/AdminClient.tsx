@@ -173,7 +173,7 @@ function ProductsTab({ headers }: { headers: () => Record<string, string> }): JS
             onChange={(e) => setForm({ ...form, supermarketSlug: e.target.value })}
             className="rounded-lg border px-2 py-2 text-sm"
           >
-            {['lidl', 'kaufland', 'profi', 'carrefour', 'mega-image', 'auchan'].map((s) => (
+            {['lidl', 'kaufland', 'profi', 'carrefour', 'mega-image', 'penny', 'auchan', 'selgros', 'metro', 'la-cocos'].map((s) => (
               <option key={s} value={s}>
                 {s}
               </option>

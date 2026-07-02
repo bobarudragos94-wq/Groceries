@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { db } from '../src/lib/db';
-import { SCHEMA_STATEMENTS } from '../src/lib/schema';
+import { ensureSchema } from '../src/lib/schema';
 import { parseCsv, rowsToScrapeResults } from './csv';
 import { saveScrapeResult } from './save';
 
@@ -23,7 +23,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  for (const stmt of SCHEMA_STATEMENTS) await db().execute(stmt);
+  await ensureSchema(db());
 
   const rows = parseCsv(readFileSync(file, 'utf-8'));
   const results = rowsToScrapeResults(rows);

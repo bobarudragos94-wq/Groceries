@@ -1,10 +1,8 @@
 import { db } from '../src/lib/db';
-import { SCHEMA_STATEMENTS } from '../src/lib/schema';
+import { ensureSchema } from '../src/lib/schema';
 
 async function main(): Promise<void> {
-  for (const stmt of SCHEMA_STATEMENTS) {
-    await db().execute(stmt);
-  }
+  await ensureSchema(db());
   console.log('✔ Schema aplicată.');
 }
 

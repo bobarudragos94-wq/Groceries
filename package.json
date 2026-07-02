@@ -10,10 +10,13 @@
     "lint": "next lint",
     "db:init": "tsx scripts/init-db.ts",
     "db:seed": "tsx scripts/seed.ts",
+    "db:recompute-categories": "tsx scripts/recompute-categories.ts",
     "scrape": "tsx scraper/index.ts",
     "scrape:lidl": "tsx scraper/index.ts --store lidl",
     "scrape:kaufland": "tsx scraper/index.ts --store kaufland",
     "scrape:profi": "tsx scraper/index.ts --store profi",
+    "scrape:auchan": "tsx scraper/index.ts --store auchan",
+    "scrape:penny": "tsx scraper/index.ts --store penny",
     "import:csv": "tsx scraper/import-csv.ts"
   },
   "dependencies": {

@@ -1,22 +1,29 @@
-# Rulează scraperele de prețuri în fiecare zi și scrie rezultatele în Turso.
+# Rulează scraperele de prețuri zilnic (acoperă garantat săptămâna de oferte)
+# și scrie rezultatele în Turso, pentru TOATE JUDEȚELE.
+#
+# Garanție de completitudine: dacă un magazin aduce mai puține produse decât
+# pragul minim, rularea EȘUEAZĂ vizibil (GitHub trimite email la eșec) și
+# prețurile existente rămân neatinse — fără rezultate parțiale tăcute.
+#
 # Necesită secretele TURSO_DATABASE_URL și TURSO_AUTH_TOKEN în repo.
 name: Scrape prices
 
 on:
   schedule:
-    # zilnic la 04:30 UTC (06:30/07:30 ora României)
+    # zilnic la 04:30 UTC (06:30/07:30 ora României); ofertele Kaufland se
+    # schimbă miercurea, Lidl luni/joi — rularea zilnică le prinde pe toate
     - cron: '30 4 * * *'
   workflow_dispatch:
     inputs:
       stores:
-        description: 'Magazine (ex: lidl,kaufland) — gol = toate'
+        description: 'Magazine (ex: lidl,kaufland,auchan) — gol = lidl,kaufland,auchan'
         required: false
         default: ''
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -27,16 +34,14 @@ jobs:
 
       - run: npm ci
 
-      # Lidl + Kaufland merg din cloud; Profi (Cloudflare) de regulă nu —
-      # scraperul raportează per magazin și iese cu succes dacă măcar unul a mers.
+      # Lidl (catalog complet, prețuri naționale) + Kaufland (oferte per județ)
+      # + Auchan (catalog complet online). Profi e blocat de Cloudflare din
+      # cloud — rulează-l de pe un IP obișnuit (npm run scrape:profi) sau CSV.
       - name: Scrape
         env:
           TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          # KAUFLAND_SCOPE: 'all' pentru toate cele ~204 magazine (implicit: un magazin/județ)
         run: |
           STORES="${{ github.event.inputs.stores }}"
-          if [ -n "$STORES" ]; then
-            npm run scrape -- --store "$STORES"
-          else
-            npm run scrape -- --store lidl,kaufland
-          fi
+          npm run scrape -- --store "${STORES:-lidl,kaufland,auchan}"

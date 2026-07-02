@@ -4,7 +4,7 @@ import { compareBasket, type BasketItem } from '@/lib/queries';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  let body: { items?: BasketItem[]; city?: string };
+  let body: { items?: BasketItem[]; city?: string; county?: string };
   try {
     body = await req.json();
   } catch {
@@ -20,7 +20,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const comparisons = await compareBasket(items, body.city || undefined);
+    const comparisons = await compareBasket(items, {
+      city: body.city || undefined,
+      county: body.county || undefined
+    });
     return NextResponse.json({ comparisons });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 500 });

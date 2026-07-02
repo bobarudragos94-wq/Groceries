@@ -27,7 +27,11 @@ const BADGE_COLORS: Record<string, string> = {
   profi: 'bg-orange-100 text-orange-800',
   carrefour: 'bg-sky-100 text-sky-800',
   'mega-image': 'bg-rose-100 text-rose-800',
-  auchan: 'bg-emerald-100 text-emerald-800'
+  penny: 'bg-amber-100 text-amber-800',
+  auchan: 'bg-emerald-100 text-emerald-800',
+  selgros: 'bg-indigo-100 text-indigo-800',
+  metro: 'bg-cyan-100 text-cyan-800',
+  'la-cocos': 'bg-lime-100 text-lime-800'
 };
 
 /** Marca se afișează doar dacă nu e deja inclusă în numele produsului. */

@@ -1,8 +1,10 @@
 import { db } from '../src/lib/db';
-import { SCHEMA_STATEMENTS } from '../src/lib/schema';
+import { ensureSchema } from '../src/lib/schema';
 import { lidlAdapter } from './adapters/lidl';
 import { kauflandAdapter } from './adapters/kaufland';
 import { profiAdapter } from './adapters/profi';
+import { auchanAdapter } from './adapters/auchan';
+import { pennyAdapter } from './adapters/penny';
 import { recordRun, saveScrapeResult } from './save';
 import type { StoreAdapter } from './types';
 
@@ -20,7 +22,9 @@ import type { StoreAdapter } from './types';
 const ADAPTERS: Record<string, StoreAdapter> = {
   lidl: lidlAdapter,
   kaufland: kauflandAdapter,
-  profi: profiAdapter
+  profi: profiAdapter,
+  auchan: auchanAdapter,
+  penny: pennyAdapter
 };
 
 async function main(): Promise<void> {
@@ -36,7 +40,7 @@ async function main(): Promise<void> {
   }
 
   // ne asigurăm că schema există (idempotent)
-  for (const stmt of SCHEMA_STATEMENTS) await db().execute(stmt);
+  await ensureSchema(db());
 
   let succeeded = 0;
   for (const slug of slugs) {
@@ -45,6 +49,13 @@ async function main(): Promise<void> {
     console.log(`\n=== ${adapter.name} — pornit ===`);
     try {
       const result = await adapter.scrape();
+      // garanție de completitudine: sub prag NU salvăm nimic (fără rezultate parțiale)
+      if (result.products.length < adapter.minProducts) {
+        throw new Error(
+          `doar ${result.products.length} produse extrase (minim așteptat: ${adapter.minProducts}) — ` +
+            `rulare incompletă, prețurile existente rămân neatinse. ${result.warnings.slice(0, 3).join(' | ')}`
+        );
+      }
       const { products, prices } = await saveScrapeResult(result);
       for (const w of result.warnings) console.warn(`  ⚠ ${w}`);
       console.log(`  ✔ ${products} produse, ${prices} prețuri actualizate`);
@@ -58,7 +69,9 @@ async function main(): Promise<void> {
   }
 
   console.log(`\nGata: ${succeeded}/${slugs.length} magazine actualizate.`);
-  process.exit(succeeded > 0 ? 0 : 1);
+  // ieșire non-zero dacă ORICE magazin cerut a eșuat, ca CI-ul să anunțe —
+  // o rulare săptămânală „reușită” înseamnă toate magazinele complete
+  process.exit(succeeded === slugs.length ? 0 : 1);
 }
 
 main().catch((err) => {

@@ -54,36 +54,59 @@ export async function searchProducts(opts: {
   q?: string;
   category?: string;
   city?: string;
+  /** județ — prețurile din magazinele județului + prețurile naționale */
+  county?: string;
   supermarket?: string;
   limit?: number;
   /** true = doar potrivire pe nume (folosit la compararea coșului, ca un
    *  termen generic să nu fie „găsit” printr-un produs greșit din categorie) */
   strict?: boolean;
+  /** true = cuvintele se potrivesc ca prefixe („deterge” găsește „detergent”) —
+   *  folosit la sugestiile de alternative */
+  prefix?: boolean;
 }): Promise<ProductHit[]> {
-  const { q, category, city, supermarket, limit = 60, strict = false } = opts;
+  const { q, category, city, county, supermarket, limit = 60, strict = false, prefix = false } = opts;
 
   const where: string[] = [];
   const args: (string | number)[] = [];
-  // produsele potrivite pe nume înaintea celor potrivite doar pe categorie
   let rankExpr = '0';
   const rankArgs: string[] = [];
 
   if (q) {
     const tokens = normalizeText(q).split(' ').filter(Boolean);
+    // potrivire pe CUVINTE întregi, nu substring — „oua” nu are voie să
+    // se potrivească cu „Roua”; în modul prefix, cuvântul poate continua
+    const wordMatch = `instr(' ' || p.normalized_name || ' ', ?) > 0`;
     for (const t of tokens) {
-      where.push(`p.normalized_name LIKE ?`);
-      args.push(`%${t}%`);
+      where.push(prefix ? `(' ' || p.normalized_name) LIKE ?` : wordMatch);
+      args.push(prefix ? `% ${t}%` : ` ${t} `);
     }
     if (!strict && tokens.length === 1) {
       // un singur cuvânt generic — acceptă și potrivirea pe categorie,
       // dar clasată după potrivirile directe pe nume
       const catSlug = mapCategory(q);
       if (catSlug !== 'altele') {
-        where[where.length - 1] = `(p.normalized_name LIKE ? OR p.category = ?)`;
+        where[where.length - 1] = `(${wordMatch} OR p.category = ?)`;
         args.push(catSlug);
-        rankExpr = `CASE WHEN p.normalized_name LIKE ? THEN 0 ELSE 1 END`;
-        rankArgs.push(`%${tokens[0]}%`);
       }
+    }
+
+    // clasament: (1) categoria potrivită întâi — laptele de băut înaintea
+    // laptelui pentru pisici; (2) cuvântul căutat cât mai devreme în nume —
+    // „Lapte UHT” înaintea „Telemea din lapte”; (3) preț crescător
+    const catSlug = mapCategory(q);
+    const posExprs = tokens.map(() => `instr(' ' || p.normalized_name || ' ', ?)`);
+    const rawMinPos = posExprs.length > 1 ? `min(${posExprs.join(', ')})` : posExprs[0];
+    // instr() = 0 înseamnă „nu apare” (potrivire doar pe categorie) — ultimul loc, nu primul
+    const minPos = `(CASE WHEN ${rawMinPos} = 0 THEN 9999 ELSE ${rawMinPos} END)`;
+    const posArgs = tokens.map((t) => (prefix ? ` ${t}` : ` ${t} `));
+    // minPos conține instr() de două ori (în CASE și în ELSE) — argumentele se dublează
+    if (catSlug !== 'altele') {
+      rankExpr = `(CASE WHEN p.category = ? THEN 0 ELSE 1 END) * 1000 + ${minPos}`;
+      rankArgs.push(catSlug, ...posArgs, ...posArgs);
+    } else {
+      rankExpr = minPos;
+      rankArgs.push(...posArgs, ...posArgs);
     }
   }
   if (category) {
@@ -97,6 +120,10 @@ export async function searchProducts(opts: {
   if (city) {
     where.push(`(pr.store_id = 0 OR st.city = ?)`);
     args.push(city);
+  }
+  if (county) {
+    where.push(`(pr.store_id = 0 OR st.county = ?)`);
+    args.push(county);
   }
 
   const sql = `
@@ -146,7 +173,11 @@ export interface SupermarketComparison {
  * ieftin produs care se potrivește; articolele lipsă primesc, unde se poate,
  * o alternativă (potrivire mai laxă). Clasament: acoperire desc, apoi total asc.
  */
-export async function compareBasket(items: BasketItem[], city?: string): Promise<SupermarketComparison[]> {
+export async function compareBasket(
+  items: BasketItem[],
+  opts: { city?: string; county?: string } = {}
+): Promise<SupermarketComparison[]> {
+  const { city, county } = opts;
   const supermarkets = await db().execute(`SELECT id, slug, name FROM supermarkets ORDER BY name`);
   const results: SupermarketComparison[] = [];
 
@@ -161,12 +192,19 @@ export async function compareBasket(items: BasketItem[], city?: string): Promise
 
     for (const item of items) {
       const qty = item.qty > 0 ? item.qty : 1;
-      const hits = await searchProducts({ q: item.query, supermarket: String(sm.slug), city, limit: 1, strict: true });
+      const hits = await searchProducts({
+        q: item.query,
+        supermarket: String(sm.slug),
+        city,
+        county,
+        limit: 1,
+        strict: true
+      });
       const product = hits[0] ?? null;
 
       let alternative: ProductHit | null = null;
       if (!product) {
-        alternative = await findAlternative(item.query, String(sm.slug), city);
+        alternative = await findAlternative(item.query, String(sm.slug), city, county);
       } else {
         comparison.total += product.price * qty;
         comparison.foundCount++;
@@ -183,29 +221,36 @@ export async function compareBasket(items: BasketItem[], city?: string): Promise
 }
 
 /** Potrivire laxă pentru sugestii: cel mai lung cuvânt, trunchiat (rădăcină). */
-async function findAlternative(query: string, supermarket: string, city?: string): Promise<ProductHit | null> {
+async function findAlternative(
+  query: string,
+  supermarket: string,
+  city?: string,
+  county?: string
+): Promise<ProductHit | null> {
   const tokens = normalizeText(query).split(' ').filter((t) => t.length >= 3);
   if (tokens.length === 0) return null;
   const longest = tokens.sort((a, b) => b.length - a.length)[0];
   const stem = longest.slice(0, Math.max(4, longest.length - 2));
-  const hits = await searchProducts({ q: stem, supermarket, city, limit: 1 });
+  const hits = await searchProducts({ q: stem, supermarket, city, county, limit: 1, prefix: true });
   return hits[0] ?? null;
 }
 
 export async function getMeta(): Promise<{
   supermarkets: Array<{ slug: string; name: string; productCount: number }>;
   cities: string[];
+  counties: string[];
   categories: Array<{ slug: string; label: string }>;
   lastUpdate: string | null;
 }> {
   const client = db();
-  const [sms, cities, lastUpdate] = await Promise.all([
+  const [sms, cities, counties, lastUpdate] = await Promise.all([
     client.execute(
       `SELECT s.slug, s.name, COUNT(p.id) AS product_count
        FROM supermarkets s LEFT JOIN products p ON p.supermarket_id = s.id
        GROUP BY s.id ORDER BY s.name`
     ),
     client.execute(`SELECT DISTINCT city FROM stores ORDER BY city`),
+    client.execute(`SELECT DISTINCT county FROM stores WHERE county IS NOT NULL ORDER BY county`),
     client.execute(`SELECT MAX(updated_at) AS m FROM prices`)
   ]);
 
@@ -214,6 +259,7 @@ export async function getMeta(): Promise<{
       (r) => ({ slug: String(r.slug), name: String(r.name), productCount: Number(r.product_count) })
     ),
     cities: (cities.rows as unknown as Array<{ city: string }>).map((r) => String(r.city)),
+    counties: (counties.rows as unknown as Array<{ county: string }>).map((r) => String(r.county)),
     categories: Object.entries(CATEGORIES).map(([slug, label]) => ({ slug, label })),
     lastUpdate: lastUpdate.rows[0]?.m ? String(lastUpdate.rows[0].m) : null
   };

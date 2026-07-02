@@ -68,7 +68,9 @@ export function rowsToScrapeResults(rows: Array<Record<string, string>>): Scrape
         stores.set(storeId, {
           externalId: storeId,
           name: r.store_name || `${capitalize(slug)} ${r.city}`,
-          city: r.city
+          city: r.city,
+          county: r.county || undefined,
+          postalCode: r.postal_code || undefined
         });
       }
       const price = parseFloat(r.price.replace(',', '.'));

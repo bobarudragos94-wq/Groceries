@@ -8,6 +8,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const q = sp.get('q') ?? undefined;
   const category = sp.get('category') ?? undefined;
   const city = sp.get('city') ?? undefined;
+  const county = sp.get('county') ?? undefined;
   const supermarket = sp.get('supermarket') ?? undefined;
 
   if (!q && !category) {
@@ -15,7 +16,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const products = await searchProducts({ q, category, city, supermarket });
+    const products = await searchProducts({ q, category, city, county, supermarket });
     return NextResponse.json({ products });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 500 });

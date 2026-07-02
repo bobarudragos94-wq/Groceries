@@ -1,5 +1,5 @@
 import { db } from '../src/lib/db';
-import { SCHEMA_STATEMENTS } from '../src/lib/schema';
+import { ensureSchema } from '../src/lib/schema';
 import { rowsToScrapeResults } from '../scraper/csv';
 import { saveScrapeResult } from '../scraper/save';
 
@@ -14,7 +14,11 @@ const SUPERMARKETS: Array<[string, string]> = [
   ['profi', 'Profi'],
   ['carrefour', 'Carrefour'],
   ['mega-image', 'Mega Image'],
-  ['auchan', 'Auchan']
+  ['penny', 'Penny'],
+  ['auchan', 'Auchan'],
+  ['selgros', 'Selgros'],
+  ['metro', 'Metro'],
+  ['la-cocos', 'La Cocoș']
 ];
 
 // supermarket, external_id, name, brand, category, unit_size, price, city
@@ -87,7 +91,7 @@ const DEMO: Row[] = [
 
 async function main(): Promise<void> {
   const client = db();
-  for (const stmt of SCHEMA_STATEMENTS) await client.execute(stmt);
+  await ensureSchema(client);
 
   for (const [slug, name] of SUPERMARKETS) {
     await client.execute({

@@ -8,6 +8,9 @@ export interface ScrapedStore {
   externalId: string;
   name: string;
   city: string;
+  /** județul; dacă lipsește se derivă din codul poștal sau oraș */
+  county?: string;
+  postalCode?: string;
   address?: string;
   lat?: number;
   lng?: number;
@@ -47,5 +50,11 @@ export interface ScrapeResult {
 export interface StoreAdapter {
   slug: string;
   name: string;
+  /**
+   * Numărul minim de produse așteptat de la o rulare completă.
+   * Sub acest prag rularea e considerată EȘUATĂ (date incomplete),
+   * ca să nu publicăm tăcut rezultate parțiale.
+   */
+  minProducts: number;
   scrape(): Promise<ScrapeResult>;
 }

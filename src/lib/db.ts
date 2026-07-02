@@ -13,6 +13,10 @@ export function db(): Client {
       url,
       authToken: process.env.TURSO_AUTH_TOKEN || undefined
     });
+    if (url.startsWith('file:')) {
+      // două procese (ex. scrapere în paralel) nu trebuie să pice pe SQLITE_BUSY
+      client.execute('PRAGMA busy_timeout = 30000').catch(() => undefined);
+    }
   }
   return client;
 }

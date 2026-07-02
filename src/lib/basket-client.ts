@@ -49,15 +49,15 @@ export function onBasketChange(cb: () => void): () => void {
   };
 }
 
-/** Orașul selectat (opțional) — influențează prețurile per magazin. */
-const CITY_KEY = 'cosul-ieftin.city';
+/** Județul selectat (opțional) — influențează prețurile per magazin. */
+const COUNTY_KEY = 'cosul-ieftin.county';
 
-export function getCity(): string {
+export function getCounty(): string {
   if (typeof window === 'undefined') return '';
-  return localStorage.getItem(CITY_KEY) ?? '';
+  return localStorage.getItem(COUNTY_KEY) ?? '';
 }
 
-export function setCity(city: string): void {
-  localStorage.setItem(CITY_KEY, city);
+export function setCounty(county: string): void {
+  localStorage.setItem(COUNTY_KEY, county);
   window.dispatchEvent(new Event(EVENT));
 }
