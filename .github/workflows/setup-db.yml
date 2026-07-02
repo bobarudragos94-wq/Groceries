@@ -1,0 +1,40 @@
+# Inițializează baza de date (schema + date demo) cu un click din web.
+# Web-only: GitHub → tab-ul Actions → „Setup database” → Run workflow.
+#
+# Necesită secretele TURSO_DATABASE_URL și TURSO_AUTH_TOKEN în repo
+# (Settings → Secrets and variables → Actions). Fără ele, scrie într-un
+# SQLite temporar care se pierde — deci setează secretele întâi.
+name: Setup database
+
+on:
+  workflow_dispatch:
+    inputs:
+      seed_demo:
+        description: 'Adaugă și produse demo?'
+        type: boolean
+        default: true
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Init schema (+ demo)
+        env:
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+        run: |
+          if [ "${{ github.event.inputs.seed_demo }}" = "false" ]; then
+            npm run db:init
+          else
+            npm run db:setup
+          fi
