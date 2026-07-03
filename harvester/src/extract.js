@@ -32,10 +32,18 @@ function firstString(obj, keys, maxLen = 300) {
     const v = obj[k];
     if (typeof v === 'string' && v.trim().length >= 2 && v.length <= maxLen) return v.trim();
     if (v && typeof v === 'object' && typeof v.name === 'string' && v.name.trim()) return v.name.trim();
+    // WordPress REST: title: { rendered: "..." }
+    if (v && typeof v === 'object' && typeof v.rendered === 'string' && v.rendered.trim()) {
+      return stripHtml(v.rendered).slice(0, maxLen);
+    }
     if (Array.isArray(v) && typeof v[0] === 'string' && v[0].trim()) return v[0].trim();
     if (Array.isArray(v) && v[0] && typeof v[0] === 'object' && typeof v[0].url === 'string') return v[0].url;
   }
   return undefined;
+}
+
+function stripHtml(s) {
+  return s.replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
 }
 
 /** Caută recursiv (max 3 niveluri) câmpuri numerice care seamănă a preț. */
@@ -205,15 +213,47 @@ function productsFromJsonLd(html, origin) {
 const DOM_EXTRACTOR = `(() => {
   const out = [];
   const seen = new Set();
-  const priceRe = /(\\d{1,4}(?:[.,]\\d{1,2})?)\\s*(?:lei|ron)/i;
+  // preferăm prețurile cu zecimale („12,99 lei”); abia apoi întregi („99 lei”)
+  // — multe site-uri afișează prețul rupt în elemente separate și textul
+  // fără zecimale e adesea altceva (procent de reducere, puncte etc.)
+  const priceReDec = /(\\d{1,4}[.,]\\d{2})\\s*(?:lei|ron)/i;
+  const priceReInt = /(\\d{1,4})\\s*(?:lei|ron)/i;
+  const priceRe = priceReInt;
   const nodes = Array.from(document.querySelectorAll('[class*="product"], [class*="offer"], [class*="card"], [class*="item"], article, li'));
   for (const el of nodes) {
     if (el.querySelector('[class*="product"], [class*="offer"], [class*="card"], article')) continue;
     const text = el.innerText || '';
     if (text.length > 600) continue;
-    const m = text.match(priceRe);
-    if (!m) continue;
-    const price = parseFloat(m[1].replace(',', '.'));
+
+    // 1) elementul dedicat prețului, dacă există — citim bucățile lui:
+    //    <span>12</span><sup>99</sup> lei -> 12.99, nu 1299
+    let price = null;
+    const priceEl = el.querySelector('[class*="price"], [class*="pret"]');
+    if (priceEl) {
+      // nodurile text SEPARAT (innerText lipește "12"+"99" în "1299"):
+      // <span>12</span><sup>99</sup> lei -> ["12","99","lei"] -> 12.99
+      const bits = [];
+      const walker = document.createTreeWalker(priceEl, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode()) {
+        const t = walker.currentNode.textContent.trim();
+        if (t) bits.push(t);
+      }
+      const pt = bits.join(' ');
+      const dm = pt.match(priceReDec) || pt.match(/(\\d{1,4}[.,]\\d{2})(?!\\d)/);
+      const sm = pt.match(/(\\d{1,4})\\s+(\\d{2})(?!\\d)/);
+      if (dm) price = parseFloat(dm[1].replace(',', '.'));
+      else if (sm) price = parseFloat(sm[1] + '.' + sm[2]);
+      else {
+        const im = pt.match(/\\d{1,4}/);
+        if (im) price = parseFloat(im[0]);
+      }
+    }
+    // 2) altfel, prețul din textul cardului (zecimalele au prioritate)
+    if (!(price > 0)) {
+      const m = text.match(priceReDec) || text.match(priceReInt);
+      if (!m) continue;
+      price = parseFloat(m[1].replace(',', '.'));
+    }
     if (!(price > 0.05 && price < 30000)) continue;
     const titleEl = el.querySelector('h1,h2,h3,h4,[class*="title"],[class*="name"],[class*="denumire"]');
     let name = titleEl ? titleEl.innerText.trim() : '';
@@ -252,6 +292,89 @@ function productsFromDom(domProducts) {
     );
 }
 
+/**
+ * 4) Produse din fișiere CSV pe care site-ul le descarcă singur
+ * (ex. exportul „oferte.csv” de pe profi.ro). Coloanele se recunosc
+ * după nume: Product_Name/name/denumire, New_Price/price/pret etc.
+ */
+function productsFromCsvText(text) {
+  const rows = parseCsvLoose(text);
+  if (rows.length === 0) return [];
+  const headers = Object.keys(rows[0]);
+
+  const find = (re) => headers.find((h) => re.test(h));
+  const nameCol = find(/product.*name|^name$|denumire|titlu|nume/i);
+  const priceCol = find(/new_price|current_price|^price$|pret(?!.*vechi)(?!.*old)/i) || find(/price|pret/i);
+  if (!nameCol || !priceCol) return [];
+  const oldCol = find(/old_price|pret.*vechi|list_price/i);
+  const imgCol = find(/image|img|poza/i);
+  const urlCol = find(/^url$|link/i);
+  const idCol = find(/^id$|sku|cod/i);
+  const brandCol = find(/brand|marca/i);
+  const catCol = find(/categ/i);
+
+  const out = [];
+  for (const r of rows) {
+    const name = (r[nameCol] || '').trim();
+    const price = parseFloat(String(r[priceCol] || '').replace(',', '.'));
+    if (!name || !sane(price)) continue;
+    const oldPrice = oldCol ? parseFloat(String(r[oldCol] || '').replace(',', '.')) : NaN;
+    out.push(
+      makeProduct({
+        externalId: idCol && r[idCol] ? String(r[idCol]) : undefined,
+        name,
+        brand: brandCol ? r[brandCol] || undefined : undefined,
+        price,
+        oldPrice: sane(oldPrice) && oldPrice > price ? oldPrice : undefined,
+        unitSize: unitFromName(name),
+        category: catCol ? r[catCol] || undefined : undefined,
+        imageUrl: imgCol ? r[imgCol] || undefined : undefined,
+        url: urlCol ? r[urlCol] || undefined : undefined
+      })
+    );
+  }
+  return out;
+}
+
+/** Parser CSV tolerant (ghilimele, BOM, \r\n). */
+function parseCsvLoose(text) {
+  text = text.replace(/^﻿/, '');
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else inQuotes = false;
+      } else field += c;
+    } else if (c === '"') inQuotes = true;
+    else if (c === ',') {
+      row.push(field);
+      field = '';
+    } else if (c === '\n' || c === '\r') {
+      if (c === '\r' && text[i + 1] === '\n') i++;
+      row.push(field);
+      field = '';
+      if (row.some((f) => f !== '')) rows.push(row);
+      row = [];
+    } else field += c;
+  }
+  row.push(field);
+  if (row.some((f) => f !== '')) rows.push(row);
+  if (rows.length < 2) return [];
+  const header = rows[0].map((h) => h.trim());
+  return rows.slice(1).map((r) => {
+    const obj = {};
+    header.forEach((h, i) => (obj[h] = (r[i] ?? '').trim()));
+    return obj;
+  });
+}
+
 /** Cheie de deduplicare stabilă. */
 function productKey(p) {
   return (p.externalId || p.name.toLowerCase().replace(/\s+/g, '-')).slice(0, 120);
@@ -275,6 +398,7 @@ module.exports = {
   productsFromJsonBodies,
   productsFromJsonLd,
   productsFromDom,
+  productsFromCsvText,
   mergeProducts,
   productKey
 };

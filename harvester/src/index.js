@@ -27,6 +27,7 @@ const {
   productsFromJsonBodies,
   productsFromJsonLd,
   productsFromDom,
+  productsFromCsvText,
   mergeProducts
 } = require('./extract');
 const SITES = require('./sites');
@@ -43,7 +44,9 @@ function parseArgs(argv) {
     url: null,
     slug: null,
     confirm: false,
-    freshProfile: false
+    freshProfile: false,
+    city: null,
+    county: null
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -57,12 +60,16 @@ function parseArgs(argv) {
     else if (a === '--slug') args.slug = argv[++i];
     else if (a === '--confirm') args.confirm = true;
     else if (a === '--fresh-profile') args.freshProfile = true;
+    else if (a === '--city') args.city = argv[++i];
+    else if (a === '--county') args.county = argv[++i];
     else if (a === '--help' || a === '-h') {
       console.log(
         'Optiuni: --sites profi,metro,la-cocos | --out <folder> | --debug | --chrome <cale> | --headless | --no-pause\n' +
           '         --url <adresa> --slug <magazin>   (culege o singură pagină, la alegere)\n' +
           '         --confirm         (așteaptă Enter la FIECARE pagină — control manual total)\n' +
-          '         --fresh-profile   (profil de browser curat, fără verificările memorate)'
+          '         --fresh-profile   (profil de browser curat, fără verificările memorate)\n' +
+          '         --city <oras> --county <judet>   (marchează prețurile ca fiind ale magazinului\n' +
+          '                            din orașul tău — ex. Metro arată prețurile magazinului selectat)'
       );
       process.exit(0);
     }
@@ -95,8 +102,39 @@ function waitForEnter(message) {
   });
 }
 
+/** Fișierele CSV/JSON pe care site-ul le-a descărcat singur în timpul vizitei. */
+function collectDownloadedProducts(downloadsDir, processed, log, debugDir, siteSlug) {
+  const products = [];
+  if (!downloadsDir || !fs.existsSync(downloadsDir)) return products;
+  for (const f of fs.readdirSync(downloadsDir)) {
+    const full = path.join(downloadsDir, f);
+    if (processed.has(full)) continue;
+    processed.add(full);
+    let text;
+    try {
+      if (fs.statSync(full).size > 20_000_000) continue;
+      text = fs.readFileSync(full, 'utf8');
+    } catch {
+      continue;
+    }
+    let found = [];
+    if (text.trimStart().startsWith('{') || text.trimStart().startsWith('[')) {
+      found = productsFromJsonBodies([{ url: `download:${f}`, body: text }]);
+    } else if (text.includes(',')) {
+      found = productsFromCsvText(text);
+    }
+    if (found.length > 0) {
+      log(`    📥 fișier descărcat de site: ${found.length} produse`);
+      products.push(...found);
+    }
+    if (debugDir) fs.copyFileSync(full, path.join(debugDir, `${siteSlug}_download_${f}`.slice(0, 120)));
+  }
+  return products;
+}
+
 async function harvestSite(port, site, opts) {
-  const { log, debugDir, confirm } = opts;
+  const { log, debugDir, confirm, downloadsDir } = opts;
+  const processedDownloads = opts.processedDownloads;
   log(`\n=== ${site.name} ===`);
 
   const onChallenge = async (kind) => {
@@ -127,7 +165,8 @@ async function harvestSite(port, site, opts) {
       page = await visitAndExtract(port, url, DOM_EXTRACTOR, {
         log,
         onChallenge,
-        confirmEveryPage: confirm === true
+        confirmEveryPage: confirm === true,
+        inPageFetches: site.inPageFetches || []
       });
     } catch (err) {
       log(`    ✘ eroare: ${err.message.split('\n')[0]}`);
@@ -142,10 +181,13 @@ async function harvestSite(port, site, opts) {
     }
 
     const fromJson = productsFromJsonBodies(page.jsonBodies, origin);
+    const fromDownloads = collectDownloadedProducts(downloadsDir, processedDownloads, log, debugDir, site.slug);
     const fromLd = productsFromJsonLd(page.html, origin);
     const fromDom = productsFromDom(page.domProducts);
-    const merged = mergeProducts(fromJson, fromLd, fromDom);
-    log(`    ✔ ${merged.length} produse (API: ${fromJson.length}, JSON-LD: ${fromLd.length}, pagină: ${fromDom.length})`);
+    const merged = mergeProducts(fromJson, fromDownloads, fromLd, fromDom);
+    log(
+      `    ✔ ${merged.length} produse (API: ${fromJson.length}, fișiere: ${fromDownloads.length}, JSON-LD: ${fromLd.length}, pagină: ${fromDom.length})`
+    );
     collected.push(merged);
 
     if (debugDir) {
@@ -244,17 +286,24 @@ async function main() {
   }
 
   const summary = [];
+  const processedDownloads = new Set();
   try {
     for (const site of sites) {
       try {
-        const products = await harvestSite(browser.port, site, { log, debugDir, confirm: args.confirm });
+        const products = await harvestSite(browser.port, site, {
+          log,
+          debugDir,
+          confirm: args.confirm,
+          downloadsDir: browser.downloadsDir,
+          processedDownloads
+        });
         if (products.length === 0) {
           summary.push({ site: site.name, count: 0, file: null });
           log(`  ✘ ${site.name}: niciun produs extras. Rulează cu --debug și trimite folderul debug/.`);
           continue;
         }
         const file = path.join(outDir, `${site.slug}-${new Date().toISOString().slice(0, 10)}.csv`);
-        fs.writeFileSync(file, toCsv(site.slug, products), 'utf8');
+        fs.writeFileSync(file, toCsv(site.slug, products, { city: args.city, county: args.county }), 'utf8');
         summary.push({ site: site.name, count: products.length, file });
         log(`  💾 ${products.length} produse → ${file}`);
       } catch (err) {

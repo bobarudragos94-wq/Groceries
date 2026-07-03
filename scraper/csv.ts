@@ -65,12 +65,14 @@ export function rowsToScrapeResults(rows: Array<Record<string, string>>): Scrape
     const products: ScrapedProduct[] = [];
 
     for (const r of group) {
-      const storeId = r.store_external_id || (r.city ? `csv-${r.city.toLowerCase()}` : '');
-      if (storeId && r.city) {
+      // orașul sau județul e suficient ca prețul să devină local
+      const place = r.city || r.county || '';
+      const storeId = r.store_external_id || (place ? `csv-${place.toLowerCase().replace(/\s+/g, '-')}` : '');
+      if (storeId && place) {
         stores.set(storeId, {
           externalId: storeId,
-          name: r.store_name || `${capitalize(slug)} ${r.city}`,
-          city: r.city,
+          name: r.store_name || `${capitalize(slug)} ${place}`,
+          city: r.city || place,
           county: r.county || undefined,
           postalCode: r.postal_code || undefined
         });
@@ -87,7 +89,8 @@ export function rowsToScrapeResults(rows: Array<Record<string, string>>): Scrape
         oldPrice: r.old_price ? parseFloat(r.old_price.replace(',', '.')) : undefined,
         imageUrl: r.image_url || undefined,
         url: r.url || undefined,
-        storeExternalIds: storeId ? [storeId] : null
+        // doar dacă magazinul chiar există — altfel prețul rămâne național
+        storeExternalIds: storeId && stores.has(storeId) ? [storeId] : null
       });
     }
 

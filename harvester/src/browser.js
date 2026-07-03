@@ -108,10 +108,37 @@ async function launchBrowser({ chromePath, headless = false, freshProfile = fals
   }
   if (!ready) throw new Error('Browserul a pornit dar portul de control nu răspunde.');
 
+  /*
+   * Capturăm și fișierele pe care site-urile le descarcă singure (ex.
+   * profi.ro servește un export „oferte.csv”) — le salvăm într-un folder
+   * cunoscut și harvester-ul le parsează ca sursă de produse.
+   */
+  const downloadsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cosul-ieftin-dl-'));
+  let browserClient = null;
+  try {
+    const version = await CDP.Version({ port });
+    browserClient = await CDP({ target: version.webSocketDebuggerUrl });
+    // conexiunea rămâne DESCHISĂ cât rulează tool-ul: comportamentul de
+    // descărcare se resetează când sesiunea CDP se închide
+    await browserClient.Browser.setDownloadBehavior({
+      behavior: 'allowAndName',
+      downloadPath: downloadsDir,
+      eventsEnabled: true
+    });
+  } catch {
+    /* fără capturarea descărcărilor — restul funcționează normal */
+  }
+
   return {
     port,
     exe,
+    downloadsDir,
     close: () => {
+      try {
+        if (browserClient) browserClient.close();
+      } catch {
+        /* conexiune deja închisă */
+      }
       try {
         proc.kill();
       } catch {
@@ -124,6 +151,11 @@ async function launchBrowser({ chromePath, headless = false, freshProfile = fals
         } catch {
           /* profil temporar rămas — inofensiv */
         }
+      }
+      try {
+        fs.rmSync(downloadsDir, { recursive: true, force: true });
+      } catch {
+        /* folder temporar rămas — inofensiv */
       }
     }
   };
@@ -172,7 +204,14 @@ async function visitAndExtract(port, url, domExtractorExpression, opts = {}) {
     }
   });
 
-  const { settleMs = 6000, scrolls = 4, log = () => {}, onChallenge = null, confirmEveryPage = false } = opts;
+  const {
+    settleMs = 6000,
+    scrolls = 4,
+    log = () => {},
+    onChallenge = null,
+    confirmEveryPage = false,
+    inPageFetches = []
+  } = opts;
 
   try {
     await Network.enable({});
@@ -215,6 +254,28 @@ async function visitAndExtract(port, url, domExtractorExpression, opts = {}) {
       await sleep(1500);
     }
     await sleep(1000);
+
+    // interogări suplimentare din interiorul paginii (ex. WordPress REST API):
+    // fetch-ul rulează în browser, cu cookie-urile și verificarea deja trecute
+    for (const fetchPath of inPageFetches) {
+      try {
+        const res = await Runtime.evaluate({
+          expression: `fetch(${JSON.stringify(fetchPath)}, { credentials: 'include' })
+            .then(r => r.ok ? r.text() : '')
+            .catch(() => '')`,
+          awaitPromise: true,
+          returnByValue: true,
+          timeout: 20000
+        });
+        const body = res.result.value;
+        if (typeof body === 'string' && body.length > 20) {
+          jsonBodies.push({ url: fetchPath, body });
+        }
+      } catch {
+        /* endpoint inexistent — normal, încercăm mai multe variante */
+      }
+      await sleep(600);
+    }
 
     const [htmlRes, urlRes, domRes] = [
       await Runtime.evaluate({ expression: 'document.documentElement ? document.documentElement.outerHTML : ""', returnByValue: true }),

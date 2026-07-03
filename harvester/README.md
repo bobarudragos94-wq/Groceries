@@ -22,6 +22,10 @@ CosulIeftin-Harvester.exe --chrome "C:\...\chrome.exe"  cale explicită către b
 CosulIeftin-Harvester.exe --url https://... --slug profi   culege o singură pagină, la alegere
 CosulIeftin-Harvester.exe --confirm                  așteaptă Enter la FIECARE pagină (control manual total)
 CosulIeftin-Harvester.exe --fresh-profile            profil de browser curat (uită verificările memorate)
+CosulIeftin-Harvester.exe --city "București" --county "București"
+                                                     marchează prețurile ca fiind ale magazinului local
+                                                     (ex. Metro arată prețurile magazinului selectat de tine,
+                                                     nu prețuri naționale — spune aplicației orașul lor)
 ```
 
 ## Cum funcționează
@@ -29,8 +33,9 @@ CosulIeftin-Harvester.exe --fresh-profile            profil de browser curat (ui
 Deschide browserul instalat pe PC (găsește singur Chrome sau Edge) cu protocolul de control DevTools, vizitează paginile de oferte/categorii și extrage produse din trei surse, în ordinea încrederii:
 
 1. **răspunsurile JSON** ale site-ului (API-urile interne, interceptate din rețea) — cele mai bogate: nume, marcă, preț, imagine;
-2. **JSON-LD** (`schema.org/Product`) din pagină;
-3. **cardurile de produs** vizibile în pagină (euristic: titlu + preț în lei).
+2. **fișierele descărcate de site** (ex. profi.ro servește un export „oferte.csv” — e capturat și parsat automat) + interogări țintite (ex. API-ul WordPress al profi.ro, apelat din pagină cu verificarea deja trecută);
+3. **JSON-LD** (`schema.org/Product`) din pagină;
+4. **cardurile de produs** vizibile în pagină (euristic: titlu + preț în lei, inclusiv prețurile afișate „rupt”: 12⁹⁹ → 12,99).
 
 Prețurile în bani (899 = 8,99 lei) sunt detectate și convertite automat; gramajul se extrage din numele produsului („1 l”, „500 g”), iar aplicația calculează la import prețul pe kg/litru.
 

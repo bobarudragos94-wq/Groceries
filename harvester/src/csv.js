@@ -27,7 +27,10 @@ function esc(v) {
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-function toCsv(supermarketSlug, products) {
+function toCsv(supermarketSlug, products, { city = null, county = null } = {}) {
+  // cu --city/--county prețurile devin specifice magazinului local
+  // (ex. Metro arată prețurile magazinului selectat, nu naționale)
+  const storeExternalId = city || county ? `harvester-${(city || county).toLowerCase().replace(/\s+/g, '-')}` : '';
   const lines = [HEADER.join(',')];
   for (const p of products) {
     lines.push(
@@ -40,10 +43,10 @@ function toCsv(supermarketSlug, products) {
         p.unitSize ?? '',
         p.price.toFixed(2),
         p.oldPrice != null ? p.oldPrice.toFixed(2) : '',
-        '', // city — gol = preț național
+        city ?? '',
+        county ?? '',
         '',
-        '',
-        '',
+        storeExternalId,
         p.imageUrl ?? '',
         p.url ?? ''
       ]

@@ -16,9 +16,19 @@ module.exports = [
   {
     slug: 'profi',
     name: 'Profi',
-    startUrls: ['https://www.profi.ro/oferte/', 'https://www.profi.ro/'],
-    discover: /\/(oferte|revista|promotii|catalog)[^"']*/i,
-    maxDiscovered: 12
+    startUrls: ['https://www.profi.ro/cupoane/', 'https://www.profi.ro/oferte/', 'https://www.profi.ro/'],
+    discover: /\/(oferte|revista|promotii|catalog|cupoane|coupon)[^"']*/i,
+    maxDiscovered: 12,
+    // profi.ro e WordPress: încercăm REST API-ul direct din pagină
+    // (fetch-ul rulează în browser, cu verificarea Cloudflare deja trecută)
+    inPageFetches: [
+      '/wp-json/wp/v2/types',
+      '/wp-json/wp/v2/coupon?per_page=100',
+      '/wp-json/wp/v2/coupon?per_page=100&page=2',
+      '/wp-json/wp/v2/cupoane?per_page=100',
+      '/wp-json/wp/v2/oferta?per_page=100',
+      '/wp-json/wp/v2/oferte?per_page=100'
+    ]
   },
   {
     slug: 'metro',
@@ -30,8 +40,9 @@ module.exports = [
   {
     slug: 'la-cocos',
     name: 'La Cocoș',
-    startUrls: ['https://www.lacocos.ro/'],
-    discover: /\/(produs|categ|shop|magazin|ofert|promo)[^"']*/i,
+    // domeniul corect e la-cocos.com (lacocos.ro e altceva)
+    startUrls: ['https://la-cocos.com/'],
+    discover: /\/(produs|product|categ|shop|magazin|ofert|promo)[^"']*/i,
     maxDiscovered: 15
   },
   {
