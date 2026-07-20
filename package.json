@@ -14,6 +14,7 @@
     "db:seed": "tsx scripts/seed.ts",
     "db:setup": "tsx scripts/init-db.ts && tsx scripts/seed.ts",
     "db:recompute-categories": "tsx scripts/recompute-categories.ts",
+    "db:link-products": "tsx scripts/link-products.ts",
     "scrape": "tsx scraper/index.ts",
     "scrape:lidl": "tsx scraper/index.ts --store lidl",
     "scrape:kaufland": "tsx scraper/index.ts --store kaufland",

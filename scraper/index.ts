@@ -1,5 +1,6 @@
 import { db } from '../src/lib/db';
 import { ensureSchema } from '../src/lib/schema';
+import { linkProducts } from '../src/lib/linking';
 import { lidlAdapter } from './adapters/lidl';
 import { kauflandAdapter } from './adapters/kaufland';
 import { profiAdapter } from './adapters/profi';
@@ -72,6 +73,17 @@ async function main(): Promise<void> {
       const msg = (err as Error).message;
       console.error(`  ✘ eșuat: ${msg}`);
       await recordRun(slug, startedAt, 'error', 0, msg).catch(() => undefined);
+    }
+  }
+
+  // după actualizarea cataloagelor, recalculăm legăturile între produsele
+  // echivalente din supermarketuri diferite (folosite la compararea coșului)
+  if (succeeded > 0) {
+    try {
+      const { groups, linked } = await linkProducts(db());
+      console.log(`\nLegături produse echivalente: ${linked} produse în ${groups} grupuri.`);
+    } catch (err) {
+      console.error(`\n⚠ legarea produselor a eșuat: ${(err as Error).message}`);
     }
   }
 

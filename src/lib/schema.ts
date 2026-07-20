@@ -157,6 +157,12 @@ export const SCHEMA_STATEMENTS: string[] = [
     email TEXT NOT NULL UNIQUE,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`,
+  `CREATE TABLE IF NOT EXISTS product_links (
+    product_id INTEGER PRIMARY KEY REFERENCES products(id) ON DELETE CASCADE,
+    group_id INTEGER NOT NULL,
+    confidence REAL NOT NULL DEFAULT 1
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_product_links_group ON product_links(group_id)`,
   `CREATE TABLE IF NOT EXISTS scrape_runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     supermarket TEXT NOT NULL,

@@ -119,8 +119,10 @@ function parsePage(html: string, byId: Map<string, ScrapedProduct>): number {
     if (!data.id || !data.name || !data.price || data.price <= 0) continue;
     if (byId.has(data.id)) continue;
 
-    // restul blocului (până la următorul produs) conține URL, imagine, preț vechi
+    // restul blocului (până la următorul produs) conține URL, imagine,
+    // marcă (data-brand) și prețul vechi
     const seg = block.slice(0, 8000);
+    const brand = decodeEntities(seg.match(/data-brand="([^"]*)"/)?.[1] ?? '');
     const url = seg.match(/href="(https:\/\/carrefour\.ro\/produse\/[^"]+)"/)?.[1];
     const image = seg.match(/data-src="(https:\/\/cdn-media\.carrefour\.ro\/[^"]+)"/)?.[1];
     // prețul vechi apare doar la promoții: <span class="price price-old">…12,34…
@@ -135,6 +137,7 @@ function parsePage(html: string, byId: Map<string, ScrapedProduct>): number {
     byId.set(data.id, {
       externalId: data.id,
       name: data.name,
+      brand: brand || undefined,
       rawCategory: rawCategory || undefined,
       price: data.price,
       oldPrice: oldPrice && oldPrice > data.price ? oldPrice : undefined,

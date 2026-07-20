@@ -37,10 +37,12 @@ Search day-to-day groceries across Romanian supermarkets, build your recurring b
 - **Delisted products are pruned**: after a successful scrape, prices that the run did *not* refresh are deleted for that supermarket (the scraper fetches the full published assortment, so anything missing is delisted or rotated out). CSV imports are *not* pruning — they may be partial top-ups.
 - `price_history` keeps every price change for future charts/alerts.
 
-## Honest basket comparison (unit prices)
+## Honest basket comparison (unit prices + product linking)
 
 - For each basket item, among equally-good textual matches the **cheapest per-unit** product wins (lei/kg / lei/l) — a small pack can no longer "beat" a big one just because its shelf price is lower.
 - When the matched pack sizes differ across supermarkets (e.g. 1 l vs 500 ml), the item is flagged and the UI shows a **⚠ Gramaj diferit** warning with the unit price, so totals are never silently misleading.
+- **Product linking** (`src/lib/linking.ts`, recomputed after every scrape, manual: `npm run db:link-products`): equivalent products across supermarkets are linked heuristically — same brand + same base quantity/unit + Jaccard ≥ 0.7 on the remaining name words, with fat/alcohol percentages required to match exactly (1,5% ≡ 1.5%, but 15% ≠ 32%). No EANs are published by the stores, so the matcher is deliberately conservative; only groups spanning ≥ 2 supermarkets are kept.
+- The basket uses links to **fill coverage gaps**: when text search misses in a supermarket because the same product is named differently there ("Lapte Zuzu 1,5%" vs "Zuzu Lapte UHT 1.5% grăsime"), the exact linked product is used and marked **✓ același produs** in the UI. Generic queries keep their cheapest-per-market behavior.
 
 ## Quick start
 

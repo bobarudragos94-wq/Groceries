@@ -11,6 +11,8 @@ interface ComparisonItem {
   alternative: Product | null;
   /** gramaj diferit față de alte supermarketuri — totalul nu e direct comparabil */
   sizeMismatch?: boolean;
+  /** același produs (legat) ca în alte supermarketuri — comparație exactă */
+  linked?: boolean;
 }
 
 interface Comparison {
@@ -155,6 +157,14 @@ export function BasketClient(): JSX.Element {
                                 {i.product.name}
                               </span>
                               {i.product.unitSize && <span className="text-xs text-gray-400"> · {i.product.unitSize}</span>}
+                              {i.linked && (
+                                <span
+                                  className="ml-1 rounded bg-emerald-50 px-1 text-[10px] font-semibold text-emerald-700"
+                                  title="Același produs, identificat și în alte supermarketuri"
+                                >
+                                  ✓ același produs
+                                </span>
+                              )}
                               {i.sizeMismatch && (
                                 <span className="block text-xs text-amber-700">
                                   ⚠ Gramaj diferit între supermarketuri

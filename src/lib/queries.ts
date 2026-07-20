@@ -222,6 +222,12 @@ export interface ComparisonItem {
    * pentru acest articol; UI-ul afișează avertisment + lei/unitate.
    */
   sizeMismatch?: boolean;
+  /**
+   * true = ACELAȘI produs (legat prin product_links: aceeași marcă + gramaj
+   * + nume echivalent) ca cel de referință din alte supermarketuri —
+   * comparația e exactă, nu doar textuală.
+   */
+  linked?: boolean;
 }
 
 export interface SupermarketComparison {
@@ -237,6 +243,9 @@ export interface SupermarketComparison {
  *  - dintre potrivirile textuale de rang egal se alege produsul cu cel mai
  *    mic preț PE UNITATE (lei/kg, lei/l) — altfel un bax mic „bate” nedrept
  *    unul mare doar pentru că prețul de raft e mai mic;
+ *  - unde căutarea textuală nu găsește nimic, dar produsul de referință e
+ *    LEGAT (product_links) de un produs echivalent din acel supermarket
+ *    (numit altfel acolo), se folosește exact produsul legat;
  *  - articolele lipsă primesc, unde se poate, o alternativă (potrivire laxă);
  *  - diferențele de gramaj între supermarketuri sunt marcate (sizeMismatch).
  * Clasament: acoperire desc, apoi total asc.
@@ -248,37 +257,54 @@ export async function compareBasket(
   const { city, county } = opts;
   const supermarkets = await db().execute(`SELECT id, slug, name FROM supermarkets ORDER BY name`);
 
+  // produsul de referință al fiecărui articol (căutare globală) + produsele
+  // legate de el, pe supermarket — calculate O DATĂ, nu per supermarket
+  const linkedByItem = await Promise.all(
+    items.map(async (item) => {
+      const globalHits = await searchProducts({ q: item.query, city, county, limit: 8, strict: true });
+      const ref = pickBestValue(globalHits);
+      return ref ? await getLinkedHits(ref.id, { city, county }) : new Map<string, ProductHit>();
+    })
+  );
+
   const results = await Promise.all(
     (supermarkets.rows as unknown as Array<{ id: number; slug: string; name: string }>).map(
       async (sm): Promise<SupermarketComparison> => {
+        const slug = String(sm.slug);
         const comparison: SupermarketComparison = {
-          slug: String(sm.slug),
+          slug,
           name: String(sm.name),
           total: 0,
           foundCount: 0,
           items: []
         };
 
-        for (const item of items) {
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
           const qty = item.qty > 0 ? item.qty : 1;
           const hits = await searchProducts({
             q: item.query,
-            supermarket: String(sm.slug),
+            supermarket: slug,
             city,
             county,
             limit: 8,
             strict: true
           });
-          const product = pickBestValue(hits);
+          const viaLink = linkedByItem[i].get(slug) ?? null;
+          const textBest = pickBestValue(hits);
+          // textual întâi (respectă exact ce a cerut utilizatorul); legătura
+          // acoperă cazul în care produsul există sub alt nume în magazin
+          const product = textBest ?? viaLink;
+          const linked = product != null && viaLink != null && product.id === viaLink.id;
 
           let alternative: ProductHit | null = null;
           if (!product) {
-            alternative = await findAlternative(item.query, String(sm.slug), city, county);
+            alternative = await findAlternative(item.query, slug, city, county);
           } else {
             comparison.total += product.price * qty;
             comparison.foundCount++;
           }
-          comparison.items.push({ query: item.query, qty, product, alternative });
+          comparison.items.push({ query: item.query, qty, product, alternative, ...(linked ? { linked } : {}) });
         }
 
         comparison.total = Math.round(comparison.total * 100) / 100;
@@ -290,6 +316,57 @@ export async function compareBasket(
   markSizeMismatches(results, items.length);
   results.sort((a, b) => b.foundCount - a.foundCount || a.total - b.total);
   return results;
+}
+
+/**
+ * Produsele din același grup de echivalență cu produsul dat (product_links),
+ * cu cel mai mic preț „viu” aplicabil — cel mult unul per supermarket.
+ */
+export async function getLinkedHits(
+  productId: number,
+  opts: { city?: string; county?: string } = {}
+): Promise<Map<string, ProductHit>> {
+  const where: string[] = [
+    `p.id IN (SELECT product_id FROM product_links
+              WHERE group_id = (SELECT group_id FROM product_links WHERE product_id = ?))`
+  ];
+  const args: (string | number)[] = [productId];
+  if (opts.city) {
+    where.push(`(pr.store_id = 0 OR st.city = ?)`);
+    args.push(opts.city);
+  }
+  if (opts.county) {
+    where.push(`(pr.store_id = 0 OR st.county = ?)`);
+    args.push(opts.county);
+  }
+  freshnessWhere(where, args);
+
+  const sql = `
+    SELECT * FROM (
+      SELECT t.*, ROW_NUMBER() OVER (PARTITION BY t.id ORDER BY t.price ASC) AS rn
+      FROM (
+        SELECT p.id, p.name, p.brand, p.category, p.unit_size, p.quantity, p.unit, p.image_url, p.url,
+               s.slug AS supermarket_slug, s.name AS supermarket_name,
+               pr.price, pr.old_price, pr.price_per_unit, pr.per_unit, pr.updated_at,
+               st.city, 0 AS match_rank
+        FROM products p
+        JOIN supermarkets s ON s.id = p.supermarket_id
+        JOIN prices pr ON pr.product_id = p.id
+        LEFT JOIN stores st ON st.id = pr.store_id
+        WHERE ${where.join(' AND ')}
+      ) t
+    )
+    WHERE rn = 1
+    ORDER BY price ASC`;
+
+  const rs = await db().execute({ sql, args });
+  const bySlug = new Map<string, ProductHit>();
+  for (const r of rs.rows as unknown as RawRow[]) {
+    const hit = rowToHit(r);
+    // rândurile vin ordonate după preț — primul per supermarket e cel mai ieftin
+    if (!bySlug.has(hit.supermarketSlug)) bySlug.set(hit.supermarketSlug, hit);
+  }
+  return bySlug;
 }
 
 /**
