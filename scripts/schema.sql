@@ -86,6 +86,26 @@ CREATE TABLE IF NOT EXISTS scrape_runs (
   finished_at TEXT
 );
 
+-- Index full-text pentru cautare rapida (tinut sincron prin triggere).
+CREATE VIRTUAL TABLE IF NOT EXISTS products_fts USING fts5(
+  normalized_name,
+  content='products',
+  content_rowid='id',
+  tokenize="unicode61 tokenchars '%,./+-'"
+);
+CREATE TRIGGER IF NOT EXISTS products_fts_ai AFTER INSERT ON products BEGIN
+  INSERT INTO products_fts(rowid, normalized_name) VALUES (new.id, new.normalized_name);
+END;
+CREATE TRIGGER IF NOT EXISTS products_fts_ad AFTER DELETE ON products BEGIN
+  INSERT INTO products_fts(products_fts, rowid, normalized_name) VALUES ('delete', old.id, old.normalized_name);
+END;
+CREATE TRIGGER IF NOT EXISTS products_fts_au AFTER UPDATE OF normalized_name ON products BEGIN
+  INSERT INTO products_fts(products_fts, rowid, normalized_name) VALUES ('delete', old.id, old.normalized_name);
+  INSERT INTO products_fts(rowid, normalized_name) VALUES (new.id, new.normalized_name);
+END;
+-- Reindexare completa (sigur de rulat si pe o baza cu produse existente).
+INSERT INTO products_fts(products_fts) VALUES('rebuild');
+
 -- Cele 10 supermarketuri (optional, dar util ca sa apara in aplicatie).
 INSERT INTO supermarkets (slug, name) VALUES
   ('lidl', 'Lidl'),

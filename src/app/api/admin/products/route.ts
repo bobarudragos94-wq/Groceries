@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { isAdmin } from '@/lib/admin-auth';
+import { requireAdmin } from '@/lib/admin-auth';
 import { normalizeText, parseUnitSize, pricePerUnit } from '@/lib/normalize';
 import { mapCategory } from '@/lib/categories';
 
@@ -14,7 +14,8 @@ function buildNormalizedName(name: string, brand?: string): string {
 }
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  if (!isAdmin(req)) return NextResponse.json({ error: 'Neautorizat' }, { status: 401 });
+  const denied = requireAdmin(req);
+  if (denied) return denied;
 
   const sp = req.nextUrl.searchParams;
   const q = sp.get('q');
@@ -37,7 +38,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  if (!isAdmin(req)) return NextResponse.json({ error: 'Neautorizat' }, { status: 401 });
+  const denied = requireAdmin(req);
+  if (denied) return denied;
 
   const body = await req.json();
   const { supermarketSlug, name, brand, category, unitSize, price } = body ?? {};

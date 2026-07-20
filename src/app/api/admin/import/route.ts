@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { isAdmin } from '@/lib/admin-auth';
+import { requireAdmin } from '@/lib/admin-auth';
 import { parseCsv, rowsToScrapeResults } from '../../../../../scraper/csv';
 import { saveScrapeResult } from '../../../../../scraper/save';
 
@@ -7,7 +7,8 @@ export const dynamic = 'force-dynamic';
 
 /** Import CSV din panoul de admin (același format ca `npm run import:csv`). */
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  if (!isAdmin(req)) return NextResponse.json({ error: 'Neautorizat' }, { status: 401 });
+  const denied = requireAdmin(req);
+  if (denied) return denied;
 
   const text = await req.text();
   if (!text.trim()) return NextResponse.json({ error: 'CSV gol' }, { status: 400 });

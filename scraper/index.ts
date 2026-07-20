@@ -5,6 +5,8 @@ import { kauflandAdapter } from './adapters/kaufland';
 import { profiAdapter } from './adapters/profi';
 import { auchanAdapter } from './adapters/auchan';
 import { pennyAdapter } from './adapters/penny';
+import { carrefourAdapter } from './adapters/carrefour';
+import { megaImageAdapter } from './adapters/mega-image';
 import { recordRun, saveScrapeResult } from './save';
 import type { StoreAdapter } from './types';
 
@@ -16,7 +18,8 @@ import type { StoreAdapter } from './types';
  *   npm run scrape -- --store lidl,kaufland
  *
  * Rulare regulată: .github/workflows/scrape.yml (cron zilnic).
- * Iese cu cod 0 dacă cel puțin un magazin a reușit, altfel 1.
+ * Iese cu cod 0 doar dacă TOATE magazinele cerute au reușit, altfel 1
+ * (CI-ul devine roșu la orice eșec — fără rezultate parțiale tăcute).
  */
 
 const ADAPTERS: Record<string, StoreAdapter> = {
@@ -24,7 +27,9 @@ const ADAPTERS: Record<string, StoreAdapter> = {
   kaufland: kauflandAdapter,
   profi: profiAdapter,
   auchan: auchanAdapter,
-  penny: pennyAdapter
+  penny: pennyAdapter,
+  carrefour: carrefourAdapter,
+  'mega-image': megaImageAdapter
 };
 
 async function main(): Promise<void> {
@@ -56,9 +61,11 @@ async function main(): Promise<void> {
             `rulare incompletă, prețurile existente rămân neatinse. ${result.warnings.slice(0, 3).join(' | ')}`
         );
       }
-      const { products, prices } = await saveScrapeResult(result);
+      // scraperul aduce întregul sortiment publicat → prețurile care nu au
+      // fost reîmprospătate de rulare sunt delistate/expirate și se curăță
+      const { products, prices, pruned } = await saveScrapeResult(result, { pruneMissing: true });
       for (const w of result.warnings) console.warn(`  ⚠ ${w}`);
-      console.log(`  ✔ ${products} produse, ${prices} prețuri actualizate`);
+      console.log(`  ✔ ${products} produse, ${prices} prețuri actualizate, ${pruned} prețuri moarte curățate`);
       await recordRun(slug, startedAt, 'ok', products, result.warnings.slice(0, 5).join(' | ') || undefined);
       succeeded++;
     } catch (err) {

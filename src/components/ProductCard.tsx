@@ -9,6 +9,8 @@ export interface Product {
   brand: string | null;
   category: string | null;
   unitSize: string | null;
+  quantity: number | null;
+  unit: string | null;
   imageUrl: string | null;
   url: string | null;
   supermarketSlug: string;

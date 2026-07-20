@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { signUid } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
 
 /**
  * Autentificare simplă doar cu email (fără parolă) — suficientă pentru MVP.
- * Setează un cookie cu id-ul utilizatorului; de înlocuit ulterior cu
- * magic link / NextAuth când conturile devin importante.
+ * Setează un cookie SEMNAT cu id-ul utilizatorului (vezi src/lib/session.ts);
+ * de înlocuit ulterior cu magic link / NextAuth când conturile devin importante.
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
   let email = '';
@@ -28,9 +29,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const user = rs.rows[0];
 
   const res = NextResponse.json({ id: Number(user.id), email: String(user.email) });
-  res.cookies.set('uid', String(user.id), {
+  res.cookies.set('uid', signUid(Number(user.id)), {
     httpOnly: true,
     sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
     maxAge: 60 * 60 * 24 * 365
   });
   return res;

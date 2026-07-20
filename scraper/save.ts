@@ -5,16 +5,38 @@ import { resolveCounty } from '../src/lib/counties';
 import { normalizeText, parseUnitSize, pricePerUnit } from '../src/lib/normalize';
 import type { ScrapeResult } from './types';
 
+export interface SaveOptions {
+  /**
+   * true = după salvare, prețurile acestui supermarket care NU au fost
+   * reîmprospătate de rularea curentă se șterg (produse delistate/oferte
+   * expirate nu mai apar cu prețuri moarte). Se folosește DOAR de scraper
+   * (care aduce întregul sortiment publicat) — importurile CSV pot fi
+   * parțiale și nu au voie să șteargă restul prețurilor.
+   */
+  pruneMissing?: boolean;
+}
+
 /**
  * Persistă rezultatul unui scrape:
  *  - upsert supermarket + magazine + produse
  *  - actualizează prețul curent (per magazin sau național, store_id=0)
  *  - la schimbare de preț, adaugă o intrare în price_history
+ *  - opțional (pruneMissing) șterge prețurile nereîmprospătate de rulare
  */
-export async function saveScrapeResult(result: ScrapeResult): Promise<{ products: number; prices: number }> {
+export async function saveScrapeResult(
+  result: ScrapeResult,
+  options: SaveOptions = {}
+): Promise<{ products: number; prices: number; pruned: number }> {
   const client = db();
 
   const supermarketId = await upsertSupermarket(client, result.supermarket.slug, result.supermarket.name);
+
+  // ceasul BAZEI DE DATE (nu al procesului) — updated_at e setat de SQLite/Turso,
+  // deci pragul de curățare trebuie luat din aceeași sursă ca să nu ștergem
+  // rânduri proaspete din cauza unei diferențe de ceas; precizie de milisecundă
+  // ca rândurile scrise chiar în secunda pornirii să nu fie curățate greșit
+  const clockRs = await client.execute(`SELECT strftime('%Y-%m-%d %H:%M:%f','now') AS now`);
+  const runStartedAt = String(clockRs.rows[0].now);
 
   const storeIdByExternal = new Map<string, number>();
   for (const s of result.stores) {
@@ -96,7 +118,18 @@ export async function saveScrapeResult(result: ScrapeResult): Promise<{ products
     }
   }
 
-  return { products: productCount, prices: priceCount };
+  let pruned = 0;
+  if (options.pruneMissing && priceCount > 0) {
+    const rs = await client.execute({
+      sql: `DELETE FROM prices
+            WHERE updated_at < ?
+              AND product_id IN (SELECT id FROM products WHERE supermarket_id = ?)`,
+      args: [runStartedAt, supermarketId]
+    });
+    pruned = rs.rowsAffected ?? 0;
+  }
+
+  return { products: productCount, prices: priceCount, pruned };
 }
 
 /** Numele normalizat pentru căutare; nu dublăm marca dacă e deja în nume. */
@@ -134,7 +167,7 @@ async function upsertPrice(
     {
       sql: `INSERT INTO prices (product_id, store_id, price, old_price, price_per_unit, per_unit,
               currency, valid_from, valid_to, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%f','now'))
             ON CONFLICT(product_id, store_id) DO UPDATE SET
               price = excluded.price, old_price = excluded.old_price,
               price_per_unit = excluded.price_per_unit, per_unit = excluded.per_unit,

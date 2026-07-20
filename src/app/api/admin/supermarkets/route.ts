@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { isAdmin } from '@/lib/admin-auth';
+import { requireAdmin } from '@/lib/admin-auth';
 import { normalizeText } from '@/lib/normalize';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  if (!isAdmin(req)) return NextResponse.json({ error: 'Neautorizat' }, { status: 401 });
+  const denied = requireAdmin(req);
+  if (denied) return denied;
 
   const rs = await db().execute(
     `SELECT s.id, s.slug, s.name,
@@ -26,7 +27,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  if (!isAdmin(req)) return NextResponse.json({ error: 'Neautorizat' }, { status: 401 });
+  const denied = requireAdmin(req);
+  if (denied) return denied;
 
   const { name } = await req.json();
   if (!name || String(name).trim().length < 2) {

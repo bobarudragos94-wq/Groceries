@@ -13,8 +13,8 @@ Search day-to-day groceries across Romanian supermarkets, build your recurring b
 | **Auchan** | VTEX shop API (category tree + paginated product search) | Full online-shop catalog (thousands of products); national online prices | ✅ verified live |
 | **Penny** | Public `product-discovery` API | ~290 published products (weekly assortment), prices in bani + price/unit; national | ✅ verified live |
 | **Profi** | **Harvester** (desktop tool, see below) or headless Chromium from a residential IP | — | ⚠️ Cloudflare hard-blocks datacenter IPs → run the Harvester on your PC, upload the CSV |
-| **Carrefour** | `catalogsearch` HTML pages are server-rendered with embedded prices (verified reachable) | — | 🔜 ready to implement |
-| **Mega Image** | GraphQL gateway (`/api/v1`) with persisted queries | — | 🔜 needs persisted-query extraction from JS bundles |
+| **Carrefour** | Server-rendered Magento category pages — clean per-product JSON in `data-event-attributes` + URL/image/old price from markup, paginated 24/page | Grocery categories (~9,000+ products, configurable via `CARREFOUR_CATEGORIES`); national online prices | ✅ verified live |
+| **Mega Image** | GraphQL gateway (`/api/v1`) — accepts full queries (no persisted-query extraction needed); `productSearchV2` with empty query walks the whole catalog, 50/page | Full online catalog (~7,500 products); national online prices | ✅ verified live |
 | **Metro** | **Harvester** (desktop tool, see below) | — | ⚠️ 403 for datacenter IPs; note real prices may require customer login |
 | **Selgros** | offers published as PDF catalogs | — | ❌ no structured source; CSV import |
 | **La Cocoș** | **Harvester** (desktop tool, see below) | — | ⚠️ 403 for datacenter IPs |
@@ -30,6 +30,17 @@ Search day-to-day groceries across Romanian supermarkets, build your recurring b
 - The scrape CLI exits non-zero if **any** requested store failed → the GitHub Actions run turns red and GitHub emails you.
 - Every run is logged in `scrape_runs` (visible in `/admin` → *Magazine*).
 - The workflow runs **daily** at 04:30 UTC (Kaufland offers rotate Wednesdays, Lidl Mon/Thu — daily runs always catch the current week). Manual trigger: Actions → *Scrape prices*.
+
+## Price freshness — no dead prices
+
+- **Expired offers disappear**: search and basket comparison ignore any price whose `valid_to` has passed, and any price not refreshed in the last `PRICE_MAX_AGE_DAYS` days (default 14).
+- **Delisted products are pruned**: after a successful scrape, prices that the run did *not* refresh are deleted for that supermarket (the scraper fetches the full published assortment, so anything missing is delisted or rotated out). CSV imports are *not* pruning — they may be partial top-ups.
+- `price_history` keeps every price change for future charts/alerts.
+
+## Honest basket comparison (unit prices)
+
+- For each basket item, among equally-good textual matches the **cheapest per-unit** product wins (lei/kg / lei/l) — a small pack can no longer "beat" a big one just because its shelf price is lower.
+- When the matched pack sizes differ across supermarkets (e.g. 1 l vs 500 ml), the item is flagged and the UI shows a **⚠ Gramaj diferit** warning with the unit price, so totals are never silently misleading.
 
 ## Quick start
 
@@ -47,6 +58,8 @@ npm run scrape:lidl
 npm run scrape:kaufland     # all 42 counties
 npm run scrape:auchan       # full catalog, takes ~20-40 min
 npm run scrape:penny
+npm run scrape:carrefour    # grocery categories, ~10 min
+npm run scrape:mega-image   # full catalog, ~3-5 min
 ```
 
 ## Configuration (`.env`, see `.env.example`)
@@ -54,11 +67,14 @@ npm run scrape:penny
 | Variable | Purpose |
 |---|---|
 | `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` | Turso in production; unset → local SQLite (`file:local.db`) |
-| `ADMIN_PASSWORD` | Password for `/admin` (default `admin` — change it) |
+| `ADMIN_PASSWORD` | Password for `/admin`. **Required in production** (and ≠ `admin`), otherwise the admin API answers 503. Constant-time compared, failed attempts rate-limited per IP |
+| `AUTH_SECRET` | HMAC secret for signing the session cookie. **Required in production** (`openssl rand -hex 32`) |
+| `PRICE_MAX_AGE_DAYS` | max age (days) for a price to still be shown (default 14) |
 | `KAUFLAND_SCOPE` | empty = one store per county (all 42 counties); `all` = all ~204 stores |
 | `KAUFLAND_CITIES` | comma-separated cities — overrides county selection |
 | `LIDL_EXTRA_QUERIES` | extra keyword safety-net queries |
 | `PROFI_CHROMIUM_PATH` | Chromium path for the Profi adapter |
+| `CARREFOUR_CATEGORIES` | Carrefour category slugs to walk (default `bacanie-carrefour,cosmetice-si-ingrijire-personala`) |
 
 ### Turso + deployment
 
@@ -106,6 +122,18 @@ Header: `supermarket,external_id,name,brand,category,unit_size,price,old_price,c
 
 `supermarkets → stores (city, county) → prices` and `supermarkets → products`; `price_history` records every change (ready for charts/alerts). See `src/lib/schema.ts` (migrations included, `ensureSchema` is idempotent).
 
+Search runs on a **FTS5 full-text index** (`products_fts`, kept in sync by triggers, rebuilt automatically when out of sync) — word-boundary matching without full-table scans, so it scales to full catalogs. If the SQLite build lacks FTS5, search transparently falls back to `instr()` matching.
+
+### Tests & CI
+
+```bash
+npm test            # vitest: unit tests (normalization, categories, counties, sessions)
+                    # + integration tests (scrape→save→search→compare on a temp SQLite db)
+npm run typecheck   # tsc --noEmit
+```
+
+The **CI workflow** (`.github/workflows/ci.yml`) runs typecheck + tests + build on every push/PR.
+
 ## Roadmap hooks
 
-Carrefour + Mega Image adapters (routes discovered, see table), price-history charts, alerts, favorites, real login, GPS location (stores have lat/lng).
+Price-history charts, alerts, favorites, real login (magic link — the `uid` cookie is already HMAC-signed), GPS location (stores have lat/lng), cross-supermarket product linking (EAN/canonical products) for even tighter basket matching.

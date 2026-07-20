@@ -9,6 +9,8 @@ interface ComparisonItem {
   qty: number;
   product: Product | null;
   alternative: Product | null;
+  /** gramaj diferit față de alte supermarketuri — totalul nu e direct comparabil */
+  sizeMismatch?: boolean;
 }
 
 interface Comparison {
@@ -153,6 +155,14 @@ export function BasketClient(): JSX.Element {
                                 {i.product.name}
                               </span>
                               {i.product.unitSize && <span className="text-xs text-gray-400"> · {i.product.unitSize}</span>}
+                              {i.sizeMismatch && (
+                                <span className="block text-xs text-amber-700">
+                                  ⚠ Gramaj diferit între supermarketuri
+                                  {i.product.pricePerUnit
+                                    ? ` — ${i.product.pricePerUnit.toFixed(2)} lei/${i.product.perUnit}`
+                                    : ''}
+                                </span>
+                              )}
                             </>
                           ) : (
                             <span className="text-red-600">

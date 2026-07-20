@@ -38,6 +38,55 @@ export async function ensureSchema(client: Client): Promise<void> {
   for (const stmt of SCHEMA_STATEMENTS) {
     await client.execute(stmt);
   }
+  await ensureFts(client);
+}
+
+/**
+ * Index full-text (FTS5) peste numele normalizate — căutarea cu instr()
+ * scanează întreaga tabelă și nu scalează la cataloage complete.
+ * Dacă build-ul de SQLite nu are FTS5, căutarea revine automat la instr()
+ * (vezi src/lib/queries.ts) — de aceea eșecul aici nu e fatal.
+ */
+export async function ensureFts(client: Client): Promise<boolean> {
+  try {
+    // tokenchars aliniat cu normalizeText (păstrează %,./+- în interiorul
+    // cuvintelor) ca interogarea și indexul să taie cuvintele identic
+    await client.execute(
+      `CREATE VIRTUAL TABLE IF NOT EXISTS products_fts USING fts5(
+        normalized_name,
+        content='products',
+        content_rowid='id',
+        tokenize="unicode61 tokenchars '%,./+-'"
+      )`
+    );
+    await client.execute(
+      `CREATE TRIGGER IF NOT EXISTS products_fts_ai AFTER INSERT ON products BEGIN
+        INSERT INTO products_fts(rowid, normalized_name) VALUES (new.id, new.normalized_name);
+      END`
+    );
+    await client.execute(
+      `CREATE TRIGGER IF NOT EXISTS products_fts_ad AFTER DELETE ON products BEGIN
+        INSERT INTO products_fts(products_fts, rowid, normalized_name) VALUES ('delete', old.id, old.normalized_name);
+      END`
+    );
+    await client.execute(
+      `CREATE TRIGGER IF NOT EXISTS products_fts_au AFTER UPDATE OF normalized_name ON products BEGIN
+        INSERT INTO products_fts(products_fts, rowid, normalized_name) VALUES ('delete', old.id, old.normalized_name);
+        INSERT INTO products_fts(rowid, normalized_name) VALUES (new.id, new.normalized_name);
+      END`
+    );
+    // baze existente: produsele dinaintea creării indexului nu sunt în FTS
+    const [fts, products] = await Promise.all([
+      client.execute(`SELECT count(*) AS c FROM products_fts`),
+      client.execute(`SELECT count(*) AS c FROM products`)
+    ]);
+    if (Number(fts.rows[0].c) !== Number(products.rows[0].c)) {
+      await client.execute(`INSERT INTO products_fts(products_fts) VALUES('rebuild')`);
+    }
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export const SCHEMA_STATEMENTS: string[] = [

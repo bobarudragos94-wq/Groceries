@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { isAdmin } from '@/lib/admin-auth';
+import { requireAdmin } from '@/lib/admin-auth';
 import { normalizeText, parseUnitSize, pricePerUnit } from '@/lib/normalize';
 
 export const dynamic = 'force-dynamic';
@@ -13,7 +13,8 @@ function buildNormalizedName(name: string, brand?: string): string {
 }
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }): Promise<NextResponse> {
-  if (!isAdmin(req)) return NextResponse.json({ error: 'Neautorizat' }, { status: 401 });
+  const denied = requireAdmin(req);
+  if (denied) return denied;
 
   const id = parseInt(params.id, 10);
   if (!id) return NextResponse.json({ error: 'Id invalid' }, { status: 400 });
@@ -70,7 +71,8 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }): Promise<NextResponse> {
-  if (!isAdmin(req)) return NextResponse.json({ error: 'Neautorizat' }, { status: 401 });
+  const denied = requireAdmin(req);
+  if (denied) return denied;
 
   const id = parseInt(params.id, 10);
   if (!id) return NextResponse.json({ error: 'Id invalid' }, { status: 400 });

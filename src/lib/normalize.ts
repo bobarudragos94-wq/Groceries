@@ -86,10 +86,12 @@ export function pricePerUnit(price: number, parsed: ParsedUnit | null): { value:
 /**
  * Parsează formatul Kaufland de preț de referință: "(=1 kg 37.98)" sau "(=100 g 3.80)".
  * Returnează prețul raportat la unitatea de bază (kg/l/buc).
+ * Notă: normalizeText elimină "=()" — după normalizare rămâne "1 kg 37.98",
+ * de aceea potrivirea e ancorată pe întregul text, fără "=".
  */
 export function parseKauflandBasePrice(text: string | null | undefined): { value: number; unit: BaseUnit } | null {
   if (!text) return null;
-  const m = normalizeText(text).match(new RegExp(String.raw`=\s*${NUM}\s*${UNIT_WORD}\s+${NUM}`));
+  const m = normalizeText(text).match(new RegExp(String.raw`^${NUM}\s*${UNIT_WORD}\s+${NUM}$`));
   if (!m) return null;
   const info = UNIT_FACTORS[canonicalUnitWord(m[2])];
   if (!info) return null;

@@ -12,6 +12,8 @@ export interface FetchOptions {
   timeoutMs?: number;
   /** pauză de bază între reîncercări (crește exponențial) */
   backoffMs?: number;
+  method?: 'GET' | 'POST';
+  body?: string;
 }
 
 export async function fetchWithRetry(url: string, opts: FetchOptions = {}): Promise<Response> {
@@ -24,6 +26,8 @@ export async function fetchWithRetry(url: string, opts: FetchOptions = {}): Prom
     }
     try {
       const res = await fetch(url, {
+        method: opts.method ?? 'GET',
+        body: opts.body,
         headers: { ...DEFAULT_HEADERS, ...opts.headers },
         signal: AbortSignal.timeout(timeoutMs),
         redirect: 'follow'
@@ -45,6 +49,16 @@ export async function fetchJson<T>(url: string, opts: FetchOptions = {}): Promis
   const res = await fetchWithRetry(url, opts);
   if (!res.ok) throw new Error(`HTTP ${res.status} la ${url}`);
   return (await res.json()) as T;
+}
+
+/** POST cu corp JSON (ex. API-uri GraphQL) — aceleași reîncercări ca fetchJson. */
+export async function postJson<T>(url: string, body: unknown, opts: FetchOptions = {}): Promise<T> {
+  return fetchJson<T>(url, {
+    ...opts,
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: { 'Content-Type': 'application/json', ...opts.headers }
+  });
 }
 
 export async function fetchText(url: string, opts: FetchOptions = {}): Promise<string> {

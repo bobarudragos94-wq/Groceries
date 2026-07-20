@@ -16,14 +16,14 @@ on:
   workflow_dispatch:
     inputs:
       stores:
-        description: 'Magazine (ex: lidl,kaufland,auchan) — gol = lidl,kaufland,auchan'
+        description: 'Magazine (ex: lidl,kaufland) — gol = lidl,kaufland,auchan,penny,carrefour,mega-image'
         required: false
         default: ''
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
@@ -35,8 +35,9 @@ jobs:
       - run: npm ci
 
       # Lidl (catalog complet, prețuri naționale) + Kaufland (oferte per județ)
-      # + Auchan (catalog complet online). Profi e blocat de Cloudflare din
-      # cloud — rulează-l de pe un IP obișnuit (npm run scrape:profi) sau CSV.
+      # + Auchan/Carrefour/Mega Image (cataloage complete online) + Penny.
+      # Profi e blocat de Cloudflare din cloud — rulează-l de pe un IP obișnuit
+      # (npm run scrape:profi) sau prin Harvester/CSV.
       - name: Scrape
         env:
           TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
@@ -44,4 +45,4 @@ jobs:
           # KAUFLAND_SCOPE: 'all' pentru toate cele ~204 magazine (implicit: un magazin/județ)
         run: |
           STORES="${{ github.event.inputs.stores }}"
-          npm run scrape -- --store "${STORES:-lidl,kaufland,auchan}"
+          npm run scrape -- --store "${STORES:-lidl,kaufland,auchan,penny,carrefour,mega-image}"
